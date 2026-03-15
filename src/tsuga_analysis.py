@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """都賀変電所エリア詳細分析スクリプト
 
-PowerX蓄電所建売案件（栃木市都賀町家中、高圧配電線連系）に関する
+P_X蓄電所建売案件（栃木市都賀町家中、高圧配電線連系）に関する
 系統制約の詳細分析を行う。
 """
 
@@ -219,7 +219,7 @@ md_lines = []
 md_lines.append("# 都賀変電所エリア詳細分析レポート\n")
 md_lines.append(f"分析日: 2026-03-15\n")
 md_lines.append("## 1. 案件概要\n")
-md_lines.append("- **事業者**: PowerX（蓄電所建売）")
+md_lines.append("- **事業者**: P_X（蓄電所建売）")
 md_lines.append("- **場所**: 栃木市都賀町家中")
 md_lines.append("- **連系方式**: 高圧配電線連系")
 md_lines.append("- **関連変電所**: 都賀変電所（配電用No.62）\n")
@@ -516,7 +516,7 @@ if len(chain_coords) > 1:
 ienaka_approx = (36.433, 139.755)  # 都賀町家中の概略位置
 folium.Marker(
     location=ienaka_approx,
-    popup="<b>蓄電所建設予定地</b><br>栃木市都賀町家中<br>(PowerX 蓄電所建売)<br>高圧配電線連系予定",
+    popup="<b>蓄電所建設予定地</b><br>栃木市都賀町家中<br>(P_X 蓄電所建売)<br>高圧配電線連系予定",
     icon=folium.Icon(color="green", icon="battery-full", prefix="fa"),
     tooltip="★ 蓄電所予定地（都賀町家中）"
 ).add_to(fg_chain)
@@ -547,7 +547,7 @@ title_html = """
 <div style="position: fixed; top: 10px; left: 60px; z-index: 1000;
      background-color: white; padding: 8px 15px; border: 2px solid #333;
      border-radius: 5px; font-size: 16px; font-weight: bold;">
-都賀変電所エリア詳細マップ — PowerX蓄電所建売案件分析
+都賀変電所エリア詳細マップ — P_X蓄電所建売案件分析
 </div>
 """
 m.get_root().html.add_child(folium.Element(title_html))
