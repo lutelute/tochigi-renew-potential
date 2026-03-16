@@ -43,7 +43,14 @@ html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino San
 <div id="map"></div>
 
 <div id="controls">
-  <b style="font-size:14px">栃木県 適地スコア</b>
+  <b style="font-size:14px">関東 RE適地スコア</b>
+
+  <h3>対象県</h3>
+  <select id="prefSelect" onchange="switchPref(this.value)" style="font-size:13px;font-weight:bold">
+    <option value="tochigi">栃木県</option>
+    <option value="chiba" disabled>千葉県 (準備中)</option>
+    <option value="ibaraki" disabled>茨城県 (準備中)</option>
+  </select>
 
   <h3>メッシュ</h3>
   <label><input type="checkbox" id="chkMesh" checked onchange="toggleMesh()"> メッシュ表示</label>
@@ -124,7 +131,27 @@ html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino San
 <div id="loading">読み込み中...</div>
 
 <script>
-const map = L.map('map').setView([36.65, 139.88], 9);
+const prefCenters={tochigi:[36.65,139.88],chiba:[35.60,140.12],ibaraki:[36.34,140.45]};
+let currentPref='tochigi';
+const map = L.map('map').setView(prefCenters.tochigi, 9);
+
+function switchPref(pref){
+  currentPref=pref;
+  // Clear all layers
+  if(meshLayer){map.removeLayer(meshLayer);meshLayer=null;}
+  meshCache={};
+  if(linesLayer){map.removeLayer(linesLayer);linesLayer=null;}
+  if(subsLayer){map.removeLayer(subsLayer);subsLayer=null;}
+  if(boundaryLayer){map.removeLayer(boundaryLayer);boundaryLayer=null;}
+  if(capMapLayer){map.removeLayer(capMapLayer);capMapLayer=null;}
+  _capMapLoading=false;
+  subsData=[];linesListData=[];
+  document.getElementById('tab-subs').innerHTML='';
+  document.getElementById('tab-lines').innerHTML='';
+  // Reload
+  map.setView(prefCenters[pref],9);
+  loadMesh(currentRes);loadLines();loadSubs();loadBoundary();
+}
 
 // Hazard pane (above tiles, below overlays)
 map.createPane('hazard');
@@ -236,7 +263,7 @@ async function loadMesh(res){
   if(meshCache[res]){renderMesh(meshCache[res]);return;}
   showLoading(true);
   try{
-    const r=await fetch('mesh_'+res+'m.geojson');
+    const r=await fetch(currentPref+'/mesh_'+res+'m.geojson');
     const d=await r.json();
     meshCache[res]=d;
     renderMesh(d);
@@ -260,7 +287,7 @@ function toggleMesh(){
 // Lines (太め)
 async function loadLines(){
   try{
-    const r=await fetch('lines_66kv.geojson');
+    const r=await fetch(currentPref+'/lines_66kv.geojson');
     const d=await r.json();
     linesLayer=L.geoJSON(d,{
       style:f=>{
@@ -286,7 +313,7 @@ async function loadLines(){
 // Substations — Polygon/Pointをすべて centroid の CircleMarker に変換
 async function loadSubs(){
   try{
-    const r=await fetch('subs_66kv.geojson');
+    const r=await fetch(currentPref+'/subs_66kv.geojson');
     const d=await r.json();
     subsLayer=L.layerGroup();
     d.features.forEach(f=>{
@@ -324,7 +351,7 @@ async function loadSubs(){
 // Boundary
 async function loadBoundary(){
   try{
-    const r=await fetch('boundary.geojson');
+    const r=await fetch(currentPref+'/boundary.geojson');
     const d=await r.json();
     boundaryLayer=L.geoJSON(d,{style:{fillColor:'transparent',color:'#000',weight:4,fillOpacity:0}}).addTo(map);
   }catch(e){}

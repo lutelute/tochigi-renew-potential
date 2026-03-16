@@ -1,28 +1,22 @@
 # 生成されたHTML・GeoJSON（大容量、再生成可能）
-output/*.html
-output/*.geojson
-output/*.png
+output/*/*.html
+output/*/*.geojson
+output/*/*.png
 
 # ダウンロードした大容量GISデータ（再取得可能）
-data/land/forest/
-data/land/agriculture/
-data/land/admin_boundary/
-data/land/land_use/
-data/land/dem/
-data/land/*.zip
-data/land/tochigi_slope.tif
+data/*/land/
 
 # All-Japan-Gridから抽出したGeoJSON（再生成可能）
-data/grid/tochigi_substations.geojson
-data/grid/tochigi_lines.geojson
-data/grid/tochigi_plants.geojson
-data/grid/tochigi_roads.geojson
+data/*/grid/*.geojson
 
 # ポテンシャルGeoJSON（再生成可能）
-data/potential/tochigi_potential.geojson
+data/*/potential/*.geojson
 
-# 今井さん関連の機密データ（メール・PDF由来）
-# ※空容量CSVはPDF抽出物だがツール動作に必要なため含める
+# 道路GeoJSON
+data/*/grid/*_roads.geojson
+
+# PDFは転載禁止のため除外
+data/*/*.pdf
 
 # Python
 __pycache__/
