@@ -121,6 +121,11 @@ html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino San
 <script>
 const map = L.map('map').setView([36.65, 139.88], 9);
 
+// Hazard pane (above tiles, below overlays)
+map.createPane('hazard');
+map.getPane('hazard').style.zIndex = 450;
+map.getPane('hazard').style.pointerEvents = 'none';
+
 // Base layers
 const bases = {
   'CartoDB': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'CartoDB',maxZoom:19}),
@@ -137,11 +142,11 @@ L.control.layers(bases,null,{position:'topright'}).addTo(map);
 // Hazard tile layers (国土地理院ハザードマップ)
 const hazardLayers = {
   flood: L.tileLayer('https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_data/{z}/{x}/{y}.png',
-    {attribution:'国土交通省',maxZoom:17,opacity:0.6}),
+    {attribution:'国土交通省',maxNativeZoom:17,maxZoom:20,opacity:0.6,pane:'hazard'}),
   sediment: L.tileLayer('https://disaportaldata.gsi.go.jp/raster/05_dosekiryukeikaikuiki/{z}/{x}/{y}.png',
-    {attribution:'国土交通省',maxZoom:17,opacity:0.6}),
+    {attribution:'国土交通省',maxNativeZoom:17,maxZoom:20,opacity:0.6,pane:'hazard'}),
   tsunami: L.tileLayer('https://disaportaldata.gsi.go.jp/raster/04_tsunami_newlegend_data/{z}/{x}/{y}.png',
-    {attribution:'国土交通省',maxZoom:17,opacity:0.6}),
+    {attribution:'国土交通省',maxNativeZoom:17,maxZoom:20,opacity:0.6,pane:'hazard'}),
 };
 
 // Colors
