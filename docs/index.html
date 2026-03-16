@@ -45,10 +45,13 @@ html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino San
 <div id="controls">
   <b style="font-size:14px">栃木県 適地スコア</b>
 
-  <h3>メッシュ解像度</h3>
+  <h3>メッシュ</h3>
+  <label><input type="checkbox" id="chkMesh" checked onchange="toggleMesh()"> メッシュ表示</label>
+  <div style="margin-top:4px">
   <button class="res-btn active" id="btn1000" onclick="loadMesh(1000)">1km</button>
   <button class="res-btn" id="btn500" onclick="loadMesh(500)">500m</button>
   <button class="res-btn" id="btn250" onclick="loadMesh(250)">250m ⚠</button>
+  </div>
 
   <h3>表示モード</h3>
   <select id="modeSelect" onchange="recolor()">
@@ -103,6 +106,12 @@ html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino San
     <button onclick="showTab('lines',this)">送電線</button>
   </div>
   <input type="text" placeholder="検索..." oninput="filterList(this.value)">
+  <div style="display:flex;gap:2px;margin-bottom:4px">
+    <small>並替:</small>
+    <button style="font-size:9px;padding:1px 4px;cursor:pointer" onclick="sortList('name')" id="sortName" class="active">50音順</button>
+    <button style="font-size:9px;padding:1px 4px;cursor:pointer" onclick="sortList('area')">地区順</button>
+    <button style="font-size:9px;padding:1px 4px;cursor:pointer" onclick="sortList('voltage')">電圧順</button>
+  </div>
   <div id="tab-subs" class="list"></div>
   <div id="tab-lines" class="list" style="display:none"></div>
 </div>
@@ -229,6 +238,13 @@ function renderMesh(d){
 
 function recolor(){if(meshLayer)meshLayer.setStyle(meshStyle);}
 
+function toggleMesh(){
+  const on=document.getElementById('chkMesh').checked;
+  if(meshLayer){
+    if(on)map.addLayer(meshLayer);else map.removeLayer(meshLayer);
+  }
+}
+
 // Lines (太め)
 async function loadLines(){
   try{
@@ -350,8 +366,8 @@ function toggleHazard(type){
 
 // List
 function buildSubsList(){
-  subsData.sort((a,b)=>a.name.localeCompare(b.name,'ja'));
-  document.getElementById('tab-subs').innerHTML=subsData.map(s=>
+  const sorted=sortEntries(subsData,currentSort);
+  document.getElementById('tab-subs').innerHTML=sorted.map(s=>
     `<div class="entry" style="border-color:${vColor(s.v)}" onclick="map.setView([${s.lat},${s.lon}],14)">`+
     `<small style="color:${vColor(s.v)}">${s.v.toFixed(0)}kV</small> ${s.name}</div>`
   ).join('');
@@ -359,8 +375,8 @@ function buildSubsList(){
 function buildLinesList(){
   const seen=new Set();
   const u=linesListData.filter(l=>{if(seen.has(l.name))return false;seen.add(l.name);return true;});
-  u.sort((a,b)=>a.name.localeCompare(b.name,'ja'));
-  document.getElementById('tab-lines').innerHTML=u.slice(0,300).map(l=>
+  const sorted=sortEntries(u,currentSort);
+  document.getElementById('tab-lines').innerHTML=sorted.slice(0,300).map(l=>
     `<div class="entry" style="border-color:${vColor(l.v)}" onclick="map.setView([${l.lat},${l.lon}],13)">`+
     `<small style="color:${vColor(l.v)}">${l.v.toFixed(0)}kV</small> ${l.name}</div>`
   ).join('');
@@ -371,6 +387,22 @@ function showTab(t,btn){
   document.querySelectorAll('.tab-btns button').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
 }
+let currentSort='name';
+function sortList(mode){
+  currentSort=mode;
+  document.querySelectorAll('#sublist button[id^=sort]').forEach(b=>b.classList.remove('active'));
+  const btn=document.getElementById('sort'+mode.charAt(0).toUpperCase()+mode.slice(1));
+  if(btn)btn.classList.add('active');
+  buildSubsList();buildLinesList();
+}
+
+function sortEntries(arr,mode){
+  if(mode==='name') return arr.slice().sort((a,b)=>a.name.localeCompare(b.name,'ja'));
+  if(mode==='voltage') return arr.slice().sort((a,b)=>b.v-a.v||a.name.localeCompare(b.name,'ja'));
+  if(mode==='area') return arr.slice().sort((a,b)=>a.lat===b.lat?a.lon-b.lon:b.lat-a.lat); // 北→南
+  return arr;
+}
+
 function filterList(q){
   q=q.toLowerCase();
   document.querySelectorAll('#sublist .entry').forEach(e=>{
