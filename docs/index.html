@@ -276,38 +276,41 @@ async function loadLines(){
   }catch(e){}
 }
 
-// Substations
+// Substations — Polygon/Pointをすべて centroid の CircleMarker に変換
 async function loadSubs(){
   try{
     const r=await fetch('subs_66kv.geojson');
     const d=await r.json();
-    subsLayer=L.geoJSON(d,{
-      pointToLayer:(f,ll)=>{
-        const v=f.properties.voltage_kv||0;
-        return L.circleMarker(ll,{radius:v>=275?12:v>=154?10:v>=66?8:6,
-          color:vColor(v),fillColor:vColor(v),fillOpacity:0.7,weight:2.5});
-      },
-      style:(f)=>{
-        const v=f.properties.voltage_kv||0;
-        return{color:vColor(v),fillColor:vColor(v),fillOpacity:0.5,weight:2.5};
-      },
-      onEachFeature:(f,l)=>{
-        const n=f.properties.name||'',v=f.properties.voltage_kv||0;
-        if(n){
-          l.bindTooltip(n,{permanent:v>=154,direction:'right',className:'sub-label'});
-          try{
-            const bounds=l.getBounds();
-            const center=bounds.getCenter();
-            subsData.push({name:n,v,lat:center.lat,lon:center.lng});
-          }catch(e){
-            const ll=l.getLatLng();
-            if(ll)subsData.push({name:n,v,lat:ll.lat,lon:ll.lng});
-          }
-        }
+    subsLayer=L.layerGroup();
+    d.features.forEach(f=>{
+      const v=f.properties.voltage_kv||0;
+      const n=f.properties.name||'';
+      // centroid計算
+      let lat,lon;
+      const g=f.geometry;
+      if(g.type==='Point'){
+        lon=g.coordinates[0];lat=g.coordinates[1];
+      }else if(g.type==='Polygon'){
+        const coords=g.coordinates[0];
+        lat=coords.reduce((s,c)=>s+c[1],0)/coords.length;
+        lon=coords.reduce((s,c)=>s+c[0],0)/coords.length;
+      }else if(g.type==='MultiPolygon'){
+        const coords=g.coordinates[0][0];
+        lat=coords.reduce((s,c)=>s+c[1],0)/coords.length;
+        lon=coords.reduce((s,c)=>s+c[0],0)/coords.length;
       }
-    }).addTo(map);
+      if(!lat||!lon)return;
+      const radius=v>=275?12:v>=154?10:v>=66?8:6;
+      const m=L.circleMarker([lat,lon],{
+        radius,color:vColor(v),fillColor:vColor(v),fillOpacity:0.7,weight:2.5
+      });
+      if(n)m.bindTooltip(n,{permanent:v>=154,direction:'right',className:'sub-label'});
+      m.addTo(subsLayer);
+      if(n)subsData.push({name:n,v,lat,lon});
+    });
+    subsLayer.addTo(map);
     buildSubsList();
-  }catch(e){}
+  }catch(e){console.error('loadSubs error:',e);}
 }
 
 // Boundary
@@ -350,13 +353,12 @@ async function loadRoads(){
 function loadCapMap(){
   if(capMapLayer){map.addLayer(capMapLayer);return;}
   capMapLayer=L.layerGroup();
-  // Match capacity data with substation positions
   subsData.forEach(s=>{
     const cd=capDistData.find(c=>s.name.includes(c.name));
     if(cd){
       L.circleMarker([s.lat,s.lon],{
-        radius:8,color:capColor(cd.cap),fillColor:capColor(cd.cap),fillOpacity:0.8,weight:2
-      }).bindTooltip(`${s.name}: ${cd.cap}MW`,{direction:'top'}).addTo(capMapLayer);
+        radius:12,color:capColor(cd.cap),fillColor:capColor(cd.cap),fillOpacity:0.85,weight:3
+      }).bindTooltip(`${s.name}: ${cd.cap}MW`,{permanent:true,direction:'right',className:'sub-label'}).addTo(capMapLayer);
     }
   });
   capMapLayer.addTo(map);
