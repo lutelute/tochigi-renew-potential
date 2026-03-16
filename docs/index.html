@@ -344,8 +344,6 @@ let rasterMeshLayer=null;
 
 function loadMesh(res){
   currentRes=res;
-  document.querySelectorAll('.res-btn').forEach(b=>b.classList.remove('active'));
-  document.getElementById('btn'+res).classList.add('active');
   // Remove old layers
   if(meshLayer){map.removeLayer(meshLayer);meshLayer=null;}
   if(rasterMeshLayer){map.removeLayer(rasterMeshLayer);rasterMeshLayer=null;}
