@@ -284,17 +284,25 @@ async function loadSubs(){
     subsLayer=L.geoJSON(d,{
       pointToLayer:(f,ll)=>{
         const v=f.properties.voltage_kv||0;
-        return L.circleMarker(ll,{radius:v>=275?9:v>=154?7:5,
-          color:vColor(v),fillColor:vColor(v),fillOpacity:0.6,weight:2});
+        return L.circleMarker(ll,{radius:v>=275?12:v>=154?10:v>=66?8:6,
+          color:vColor(v),fillColor:vColor(v),fillOpacity:0.7,weight:2.5});
+      },
+      style:(f)=>{
+        const v=f.properties.voltage_kv||0;
+        return{color:vColor(v),fillColor:vColor(v),fillOpacity:0.5,weight:2.5};
       },
       onEachFeature:(f,l)=>{
         const n=f.properties.name||'',v=f.properties.voltage_kv||0;
         if(n){
           l.bindTooltip(n,{permanent:v>=154,direction:'right',className:'sub-label'});
-          // Polygon/MultiPolygonのcentroidを計算
-          const bounds=l.getBounds();
-          const center=bounds.getCenter();
-          subsData.push({name:n,v,lat:center.lat,lon:center.lng});
+          try{
+            const bounds=l.getBounds();
+            const center=bounds.getCenter();
+            subsData.push({name:n,v,lat:center.lat,lon:center.lng});
+          }catch(e){
+            const ll=l.getLatLng();
+            if(ll)subsData.push({name:n,v,lat:ll.lat,lon:ll.lng});
+          }
         }
       }
     }).addTo(map);
