@@ -183,11 +183,13 @@ async function switchPref(pref){
 }
 async function loadMeshForPref(pr,res){
   try{
-    const r=await fetch(pr+'/mesh_'+res+'m.geojson');
+    let r=await fetch(pr+'/mesh_'+res+'m.geojson');
+    if(!r.ok&&res!==1000)r=await fetch(pr+'/mesh_1000m.geojson');
+    if(!r.ok)return;
     const d=await r.json();
     const ly=L.geoJSON(d,{style:meshStyle,onEachFeature:onMeshFeature}).addTo(map);
     allPrefLayers.push(ly);
-  }catch(e){console.error('mesh load error for '+pr,e);}
+  }catch(e){console.warn('mesh load for '+pr+':',e.message);}
 }
 
 async function loadLinesForPref(pr){
@@ -347,10 +349,20 @@ async function loadMesh(res){
   showLoading(true);
   try{
     const r=await fetch(currentPref+'/mesh_'+res+'m.geojson');
+    if(!r.ok)throw new Error(r.status+' '+r.statusText);
     const d=await r.json();
     meshCache[res]=d;
     renderMesh(d);
-  }catch(e){alert('読み込みエラー: '+e.message);}
+  }catch(e){
+    console.warn('Mesh load:',e.message);
+    // 該当解像度が未生成の場合は1kmにフォールバック
+    if(res!==1000){
+      console.log('Falling back to 1km');
+      showLoading(false);
+      loadMesh(1000);
+      return;
+    }
+  }
   showLoading(false);
 }
 
