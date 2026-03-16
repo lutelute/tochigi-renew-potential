@@ -6,8 +6,6 @@
 <title>関東 RE適地スコアマップ</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/pmtiles@3.0.6/dist/pmtiles.js"></script>
-<script src="https://unpkg.com/protomaps-leaflet@4.0.0/dist/protomaps-leaflet.min.js"></script>
 <style>
 html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino Sans',sans-serif}
 #map{width:100%;height:100%}
@@ -58,14 +56,9 @@ html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino San
     <option value="all">3県同時表示</option>
   </select>
 
-  <h3>メッシュ</h3>
+  <h3>適地メッシュ</h3>
   <label><input type="checkbox" id="chkMesh" checked onchange="toggleMesh()"> メッシュ表示</label>
-  <small style="color:#888">ズームで自動切替 (1km→500m→250m)</small>
-  <div style="margin-top:4px">
-  <button class="res-btn active" id="btn1000" onclick="loadMesh(1000)">1km</button>
-  <button class="res-btn" id="btn500" onclick="loadMesh(500)">500m</button>
-  <button class="res-btn" id="btn250" onclick="loadMesh(250)">250m</button>
-  </div>
+  <small style="color:#888">ラスタータイル配信（ズームで自動高解像度化）</small>
 
   <h3>表示モード</h3>
   <small style="color:#888">※メッシュ表示ON時に有効</small>
@@ -148,7 +141,7 @@ const map = L.map('map').setView(prefCenters.tochigi, 9);
 
 function clearAllLayers(){
   if(meshLayer){map.removeLayer(meshLayer);meshLayer=null;}
-  if(pmtilesLayer){map.removeLayer(pmtilesLayer);pmtilesLayer=null;}
+  if(rasterMeshLayer){map.removeLayer(rasterMeshLayer);rasterMeshLayer=null;}
   meshCache={};
   if(linesLayer){map.removeLayer(linesLayer);linesLayer=null;}
   if(subsLayer){map.removeLayer(subsLayer);subsLayer=null;}
@@ -185,15 +178,12 @@ async function switchPref(pref){
     loadMesh(currentRes);loadLines();loadSubs();loadBoundary();
   }
 }
-async function loadMeshForPref(pr,res){
-  try{
-    let r=await fetch(pr+'/mesh_'+res+'m.geojson');
-    if(!r.ok&&res!==1000)r=await fetch(pr+'/mesh_1000m.geojson');
-    if(!r.ok)return;
-    const d=await r.json();
-    const ly=L.geoJSON(d,{style:meshStyle,onEachFeature:onMeshFeature,pane:'mesh'}).addTo(map);
-    allPrefLayers.push(ly);
-  }catch(e){console.warn('mesh load for '+pr+':',e.message);}
+function loadMeshForPref(pr,res){
+  const ly=L.tileLayer(pr+'/tiles/{z}/{x}/{y}.png',{
+    pane:'mesh',maxNativeZoom:14,maxZoom:20,opacity:0.8,
+    errorTileUrl:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+  }).addTo(map);
+  allPrefLayers.push(ly);
 }
 
 async function loadLinesForPref(pr){
@@ -348,39 +338,29 @@ function onMeshFeature(f,layer){
 
 function showLoading(v){document.getElementById('loading').style.display=v?'block':'none';}
 
-let pmtilesLayer=null;
+let rasterMeshLayer=null;
 
-async function loadMesh(res){
+function loadMesh(res){
   currentRes=res;
   document.querySelectorAll('.res-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('btn'+res).classList.add('active');
+  // Remove old layers
   if(meshLayer){map.removeLayer(meshLayer);meshLayer=null;}
-  if(pmtilesLayer){map.removeLayer(pmtilesLayer);pmtilesLayer=null;}
+  if(rasterMeshLayer){map.removeLayer(rasterMeshLayer);rasterMeshLayer=null;}
 
-  // GeoJSON loading (PMTiles disabled pending raster tile migration)
-  showLoading(true);
-  if(meshCache[res]){renderMesh(meshCache[res]);showLoading(false);return;}
-  try{
-    const r=await fetch(currentPref+'/mesh_'+res+'m.geojson');
-    if(!r.ok)throw new Error(r.status);
-    const d=await r.json();
-    meshCache[res]=d;
-    renderMesh(d);
-  }catch(e){
-    if(res!==1000){showLoading(false);loadMesh(1000);return;}
-  }
-  showLoading(false);
+  // Raster tiles (ハザードマップと同方式、ズームで自動高解像度化)
+  rasterMeshLayer=L.tileLayer(currentPref+'/tiles/{z}/{x}/{y}.png',{
+    pane:'mesh',maxNativeZoom:14,maxZoom:20,opacity:0.8,
+    errorTileUrl:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+  });
+  if(document.getElementById('chkMesh').checked)rasterMeshLayer.addTo(map);
 }
 
-function renderMesh(d){
-  meshLayer=L.geoJSON(d,{style:meshStyle,onEachFeature:onMeshFeature,pane:'mesh'}).addTo(map);
-}
-
-function recolor(){if(meshLayer)meshLayer.setStyle(meshStyle);}
+function recolor(){/* ラスタータイルは静的画像のため再計算不可 */}
 
 function toggleMesh(){
   const on=document.getElementById('chkMesh').checked;
-  if(meshLayer){if(on)map.addLayer(meshLayer);else map.removeLayer(meshLayer);}
+  if(rasterMeshLayer){if(on)map.addLayer(rasterMeshLayer);else map.removeLayer(rasterMeshLayer);}
 }
 
 // Lines (太め)
