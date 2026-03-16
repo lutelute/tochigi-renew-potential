@@ -157,7 +157,7 @@ def score_grid_distance(mesh: gpd.GeoDataFrame, lines: gpd.GeoDataFrame) -> np.n
 
 def score_substation_distance(mesh: gpd.GeoDataFrame, subs: gpd.GeoDataFrame) -> np.ndarray:
     """変電所(66kV以上)からの距離スコア"""
-    hv_subs = subs[subs["voltage_kv"] >= 66].copy()
+    hv_subs = subs[(subs["voltage_kv"] >= 66) | (subs["voltage_kv"] == 0)].copy()
     if len(hv_subs) == 0:
         return np.full(len(mesh), 50)
 
@@ -520,7 +520,7 @@ def main():
 
     # 送電線オーバーレイ
     fg_lines = folium.FeatureGroup(name="送電線 (66kV以上)", show=True)
-    for _, row in lines[lines["voltage_kv"] >= 66].iterrows():
+    for _, row in lines[(lines["voltage_kv"] >= 66) | (lines["voltage_kv"] == 0)].iterrows():
         v = row["voltage_kv"]
         geom = row.geometry
         if geom is None:
@@ -533,7 +533,7 @@ def main():
                 coords.extend([(c[1], c[0]) for c in part.coords])
         if coords:
             color = ("#ff0000" if v >= 500 else "#ff6600" if v >= 275
-                     else "#0066ff" if v >= 154 else "#00aa44")
+                     else "#0066ff" if v >= 154 else "#00aa44" if v >= 66 else "#999999")
             weight = 3 if v >= 275 else 2 if v >= 154 else 1
             name = row.get("name", "")
             if pd.isna(name):
@@ -545,22 +545,22 @@ def main():
     fg_lines.add_to(m)
 
     # 変電所オーバーレイ
-    fg_subs = folium.FeatureGroup(name="変電所 (66kV以上)", show=True)
-    for _, row in subs[subs["voltage_kv"] >= 66].iterrows():
+    fg_subs = folium.FeatureGroup(name="変電所", show=True)
+    for _, row in subs[(subs["voltage_kv"] >= 66) | (subs["voltage_kv"] == 0)].iterrows():
         v = row["voltage_kv"]
         name = row.get("name", "")
         if pd.isna(name):
             name = f"変電所 ({v:.0f}kV)"
         centroid = row.geometry.centroid
         color = ("#ff0000" if v >= 500 else "#ff6600" if v >= 275
-                 else "#0066ff" if v >= 154 else "#00aa44")
+                 else "#0066ff" if v >= 154 else "#00aa44" if v >= 66 else "#999999")
         radius = 4 if v < 154 else 6 if v < 275 else 8
         folium.CircleMarker(
             location=[centroid.y, centroid.x], radius=radius,
             color=color, fill=True, fill_color=color, fill_opacity=0.6,
             tooltip=name,
         ).add_to(fg_subs)
-        if v >= 66:
+        if v >= 66 or v == 0:
             fs = 8 if v < 154 else 10 if v < 275 else 11
             folium.Marker(
                 location=[centroid.y, centroid.x],
@@ -696,7 +696,7 @@ def main():
     # 変電所・送電線リストパネル (右サイドバー)
     # 変電所データ収集
     sub_entries = []
-    for _, row in subs[subs["voltage_kv"] >= 66].iterrows():
+    for _, row in subs[(subs["voltage_kv"] >= 66) | (subs["voltage_kv"] == 0)].iterrows():
         name = row.get("name", "")
         if pd.isna(name) or not name:
             continue
@@ -710,7 +710,7 @@ def main():
     # 送電線データ収集 (ユニーク名のみ)
     line_entries = []
     seen_names = set()
-    for _, row in lines[lines["voltage_kv"] >= 66].iterrows():
+    for _, row in lines[(lines["voltage_kv"] >= 66) | (lines["voltage_kv"] == 0)].iterrows():
         name = row.get("name", "")
         if pd.isna(name) or not name or name in seen_names:
             continue

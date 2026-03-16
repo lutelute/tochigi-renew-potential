@@ -397,7 +397,7 @@ def main():
     fg_subs = folium.FeatureGroup(name="変電所 (OSM)", show=True)
     for _, row in subs.iterrows():
         v = row["voltage_kv"]
-        if v < 66:
+        if v < 66 and v != 0:
             continue
         name = row.get("_display_name", None)
         if pd.isna(name) or name is None:

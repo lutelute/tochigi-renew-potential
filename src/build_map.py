@@ -153,8 +153,8 @@ def main():
     fg_subs = folium.FeatureGroup(name="変電所 (OSM)", show=True)
     for _, row in subs.iterrows():
         v = row["voltage_kv"]
-        if v < 66:
-            continue  # 低圧は省略
+        if v < 66 and v != 0:
+            continue  # 低圧は省略 (v==0は電圧不明、含める)
         name = row.get("_display_name", row.get("name", ""))
         if pd.isna(name):
             name = f"変電所 ({v:.0f}kV)"

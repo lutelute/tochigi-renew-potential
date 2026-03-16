@@ -93,6 +93,7 @@ html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino San
   <div class="item"><div style="width:24px;height:4px;background:#ff6600"></div>275kV</div>
   <div class="item"><div style="width:24px;height:3px;background:#0066ff"></div>154kV</div>
   <div class="item"><div style="width:24px;height:2px;background:#00aa44"></div>66kV</div>
+  <div class="item"><div style="width:24px;height:2px;background:#999999"></div>不明</div>
   <hr>
   <b>空容量</b>
   <div class="item"><div class="box" style="background:red;border-radius:50%;width:12px;height:12px"></div>0MW</div>
@@ -154,7 +155,7 @@ function scoreColor(s){
   if(s>=80)return'#006400';if(s>=60)return'#228B22';if(s>=40)return'#DAA520';if(s>=20)return'#FF8C00';return'#DC143C';
 }
 function vColor(v){
-  if(v>=500)return'#ff0000';if(v>=275)return'#ff6600';if(v>=154)return'#0066ff';return'#00aa44';
+  if(v>=500)return'#ff0000';if(v>=275)return'#ff6600';if(v>=154)return'#0066ff';if(v>=66)return'#00aa44';return'#999999';
 }
 function capColor(c){if(c<=0)return'red';if(c<=50)return'orange';return'green';}
 
