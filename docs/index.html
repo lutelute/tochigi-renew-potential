@@ -3,9 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>栃木県 再エネ適地スコアマップ</title>
+<title>関東 RE適地スコアマップ</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/pmtiles@3.0.6/dist/pmtiles.js"></script>
+<script src="https://unpkg.com/protomaps-leaflet@4.0.0/dist/protomaps-leaflet.min.js"></script>
 <style>
 html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino Sans',sans-serif}
 #map{width:100%;height:100%}
@@ -58,10 +60,11 @@ html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino San
 
   <h3>メッシュ</h3>
   <label><input type="checkbox" id="chkMesh" checked onchange="toggleMesh()"> メッシュ表示</label>
+  <small style="color:#888">ズームで自動切替 (1km→500m→250m)</small>
   <div style="margin-top:4px">
   <button class="res-btn active" id="btn1000" onclick="loadMesh(1000)">1km</button>
   <button class="res-btn" id="btn500" onclick="loadMesh(500)">500m</button>
-  <button class="res-btn" id="btn250" onclick="loadMesh(250)">250m ⚠</button>
+  <button class="res-btn" id="btn250" onclick="loadMesh(250)">250m</button>
   </div>
 
   <h3>表示モード</h3>
@@ -145,6 +148,7 @@ const map = L.map('map').setView(prefCenters.tochigi, 9);
 
 function clearAllLayers(){
   if(meshLayer){map.removeLayer(meshLayer);meshLayer=null;}
+  if(pmtilesLayer){map.removeLayer(pmtilesLayer);pmtilesLayer=null;}
   meshCache={};
   if(linesLayer){map.removeLayer(linesLayer);linesLayer=null;}
   if(subsLayer){map.removeLayer(subsLayer);subsLayer=null;}
@@ -235,7 +239,11 @@ async function loadBoundaryForPref(pr){
   }catch(e){}
 }
 
-// Hazard pane (above tiles, below overlays)
+// Custom panes for z-order control
+map.createPane('mesh');
+map.getPane('mesh').style.zIndex = 300;
+map.getPane('mesh').style.pointerEvents = 'none'; // メッシュはクリック不要、下のレイヤーを透過
+
 map.createPane('hazard');
 map.getPane('hazard').style.zIndex = 450;
 map.getPane('hazard').style.pointerEvents = 'none';
@@ -340,43 +348,66 @@ function onMeshFeature(f,layer){
 
 function showLoading(v){document.getElementById('loading').style.display=v?'block':'none';}
 
+let pmtilesLayer=null;
+
 async function loadMesh(res){
   currentRes=res;
   document.querySelectorAll('.res-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('btn'+res).classList.add('active');
   if(meshLayer){map.removeLayer(meshLayer);meshLayer=null;}
-  if(meshCache[res]){renderMesh(meshCache[res]);return;}
+  if(pmtilesLayer){map.removeLayer(pmtilesLayer);pmtilesLayer=null;}
+
+  // Try PMTiles first (all resolutions in one file, zoom-aware)
+  const pmUrl=currentPref+'/mesh.pmtiles';
   showLoading(true);
   try{
+    const check=await fetch(pmUrl,{method:'HEAD'});
+    if(check.ok){
+      pmtilesLayer=protomapsL.leafletLayer({
+        url:pmUrl,
+        pane:'mesh',
+        paint_rules:[{
+          dataLayer:'mesh',
+          symbolizer:new protomapsL.PolygonSymbolizer({
+            fill:(z,f)=>{
+              const s=f.props.total_score||0;
+              if(s>=80)return'#006400';if(s>=60)return'#228B22';if(s>=40)return'#DAA520';if(s>=20)return'#FF8C00';return'#DC143C';
+            },
+            opacity:0.5
+          })
+        }],
+        label_rules:[]
+      });
+      pmtilesLayer.addTo(map);
+      showLoading(false);
+      return;
+    }
+  }catch(e){console.warn('PMTiles not available, falling back to GeoJSON');}
+
+  // Fallback to GeoJSON
+  if(meshCache[res]){renderMesh(meshCache[res]);showLoading(false);return;}
+  try{
     const r=await fetch(currentPref+'/mesh_'+res+'m.geojson');
-    if(!r.ok)throw new Error(r.status+' '+r.statusText);
+    if(!r.ok)throw new Error(r.status);
     const d=await r.json();
     meshCache[res]=d;
     renderMesh(d);
   }catch(e){
-    console.warn('Mesh load:',e.message);
-    // 該当解像度が未生成の場合は1kmにフォールバック
-    if(res!==1000){
-      console.log('Falling back to 1km');
-      showLoading(false);
-      loadMesh(1000);
-      return;
-    }
+    if(res!==1000){showLoading(false);loadMesh(1000);return;}
   }
   showLoading(false);
 }
 
 function renderMesh(d){
-  meshLayer=L.geoJSON(d,{style:meshStyle,onEachFeature:onMeshFeature}).addTo(map);
+  meshLayer=L.geoJSON(d,{style:meshStyle,onEachFeature:onMeshFeature,pane:'mesh'}).addTo(map);
 }
 
 function recolor(){if(meshLayer)meshLayer.setStyle(meshStyle);}
 
 function toggleMesh(){
   const on=document.getElementById('chkMesh').checked;
-  if(meshLayer){
-    if(on)map.addLayer(meshLayer);else map.removeLayer(meshLayer);
-  }
+  const ly=pmtilesLayer||meshLayer;
+  if(ly){if(on)map.addLayer(ly);else map.removeLayer(ly);}
 }
 
 // Lines (太め)

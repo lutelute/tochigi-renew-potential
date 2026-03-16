@@ -24,6 +24,10 @@ __pycache__/
 .venv/
 *.egg-info/
 
+# docs内の大容量GeoJSON（PMTilesで配信するため不要）
+docs/*/mesh_500m.geojson
+docs/*/mesh_250m.geojson
+
 # OS
 .DS_Store
 Thumbs.db
