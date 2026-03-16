@@ -186,12 +186,29 @@ async function switchPref(pref){
   }
 }
 async function loadMeshForPref(pr,res){
+  // Try PMTiles first (zoom-aware, all resolutions)
+  const pmUrl=pr+'/mesh.pmtiles';
+  try{
+    const check=await fetch(pmUrl,{method:'HEAD'});
+    if(check.ok){
+      const ly=protomapsL.leafletLayer({
+        url:pmUrl,pane:'mesh',
+        paint_rules:[{dataLayer:'mesh',symbolizer:new protomapsL.PolygonSymbolizer({
+          fill:(z,f)=>{const s=f.props.total_score||0;
+            if(s>=80)return'#006400';if(s>=60)return'#228B22';if(s>=40)return'#DAA520';if(s>=20)return'#FF8C00';return'#DC143C';},
+          opacity:0.5})}],
+        label_rules:[]
+      });
+      ly.addTo(map);allPrefLayers.push(ly);return;
+    }
+  }catch(e){}
+  // Fallback to GeoJSON
   try{
     let r=await fetch(pr+'/mesh_'+res+'m.geojson');
     if(!r.ok&&res!==1000)r=await fetch(pr+'/mesh_1000m.geojson');
     if(!r.ok)return;
     const d=await r.json();
-    const ly=L.geoJSON(d,{style:meshStyle,onEachFeature:onMeshFeature}).addTo(map);
+    const ly=L.geoJSON(d,{style:meshStyle,onEachFeature:onMeshFeature,pane:'mesh'}).addTo(map);
     allPrefLayers.push(ly);
   }catch(e){console.warn('mesh load for '+pr+':',e.message);}
 }
