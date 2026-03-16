@@ -61,19 +61,15 @@ html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino San
   <small style="color:#888">ラスタータイル配信（ズームで自動高解像度化）</small>
 
   <h3>表示モード</h3>
-  <small style="color:#888">※メッシュ表示ON時に有効</small>
-  <select id="modeSelect" onchange="recolor()">
+  <select id="modeSelect" onchange="switchScoreMode(this.value)">
     <option value="total">総合スコア</option>
     <option value="slope">傾斜スコア</option>
-    <option value="grid">送電線距離スコア</option>
-    <option value="sub">変電所距離スコア</option>
-    <option value="land">土地利用スコア</option>
-    <option value="elev">標高スコア</option>
+    <option value="grid_dist">送電線距離スコア</option>
+    <option value="sub_dist">変電所距離スコア</option>
+    <option value="land_use">土地利用スコア</option>
+    <option value="elevation">標高スコア</option>
   </select>
-
-  <h3>AHP重み調整</h3>
-  <label><input type="checkbox" id="chkCapacity" onchange="recolor()"> 空容量を考慮 (+10%)</label>
-  <small style="color:#888">※メッシュ表示ON + 総合スコア選択時のみ有効</small>
+  <small style="color:#888">各基準のスコア(0-100)を個別表示</small>
 
   <h3>レイヤー</h3>
   <label><input type="checkbox" id="chkLines" checked onchange="toggle('lines')"> 送電線 (66kV以上)</label>
@@ -170,18 +166,19 @@ async function switchPref(pref){
       await loadLinesForPref(pr);
       await loadSubsForPref(pr);
       await loadBoundaryForPref(pr);
-      await loadMeshForPref(pr,currentRes);
+      loadMeshForPref(pr);
     }
     currentPref='all';
     buildSubsList();buildLinesList();
   }else{
     currentPref=pref;
     map.setView(prefCenters[pref],9);
-    loadMesh(currentRes);loadLines();loadSubs();loadBoundary();
+    loadMesh();loadLines();loadSubs();loadBoundary();
   }
 }
-function loadMeshForPref(pr,res){
-  const ly=L.tileLayer(pr+'/tiles/{z}/{x}/{y}.png',{
+function loadMeshForPref(pr){
+  const tileDir=getTileDir(pr,currentScoreMode);
+  const ly=L.tileLayer(tileDir+'/{z}/{x}/{y}.png',{
     pane:'mesh',maxNativeZoom:14,maxZoom:20,opacity:0.8,
     errorTileUrl:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
   }).addTo(map);
@@ -341,22 +338,34 @@ function onMeshFeature(f,layer){
 function showLoading(v){document.getElementById('loading').style.display=v?'block':'none';}
 
 let rasterMeshLayer=null;
+let currentScoreMode='total';
 
-function loadMesh(res){
-  currentRes=res;
-  // Remove old layers
-  if(meshLayer){map.removeLayer(meshLayer);meshLayer=null;}
+function getTileDir(pref,mode){
+  // tiles_total, tiles_slope, tiles_grid_dist, etc. — fallback to tiles/ for legacy
+  return pref+'/tiles_'+mode;
+}
+
+function loadMesh(){
   if(rasterMeshLayer){map.removeLayer(rasterMeshLayer);rasterMeshLayer=null;}
-
-  // Raster tiles (ハザードマップと同方式、ズームで自動高解像度化)
-  rasterMeshLayer=L.tileLayer(currentPref+'/tiles/{z}/{x}/{y}.png',{
+  const tileDir=getTileDir(currentPref,currentScoreMode);
+  rasterMeshLayer=L.tileLayer(tileDir+'/{z}/{x}/{y}.png',{
     pane:'mesh',maxNativeZoom:14,maxZoom:20,opacity:0.8,
     errorTileUrl:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
   });
   if(document.getElementById('chkMesh').checked)rasterMeshLayer.addTo(map);
 }
 
-function recolor(){/* ラスタータイルは静的画像のため再計算不可 */}
+function switchScoreMode(mode){
+  currentScoreMode=mode;
+  if(currentPref==='all'){
+    // 3県同時: 各県のメッシュレイヤーを再生成
+    allPrefLayers.forEach(l=>{if(l._url&&l._url.includes('/tiles_'))map.removeLayer(l);});
+    allPrefLayers=allPrefLayers.filter(l=>!(l._url&&l._url.includes('/tiles_')));
+    ['tochigi','chiba','ibaraki'].forEach(pr=>loadMeshForPref(pr));
+  }else{
+    loadMesh();
+  }
+}
 
 function toggleMesh(){
   const on=document.getElementById('chkMesh').checked;
