@@ -286,8 +286,10 @@ async function loadSubs(){
         const n=f.properties.name||'',v=f.properties.voltage_kv||0;
         if(n){
           l.bindTooltip(n,{permanent:v>=154,direction:'right',className:'sub-label'});
-          const c=f.geometry.coordinates;
-          subsData.push({name:n,v,lat:c[1],lon:c[0]});
+          // Polygon/MultiPolygonのcentroidを計算
+          const bounds=l.getBounds();
+          const center=bounds.getCenter();
+          subsData.push({name:n,v,lat:center.lat,lon:center.lng});
         }
       }
     }).addTo(map);
@@ -368,7 +370,7 @@ function toggleHazard(type){
 function buildSubsList(){
   const sorted=sortEntries(subsData,currentSort);
   document.getElementById('tab-subs').innerHTML=sorted.map(s=>
-    `<div class="entry" style="border-color:${vColor(s.v)}" onclick="map.setView([${s.lat},${s.lon}],14)">`+
+    `<div class="entry" style="border-color:${vColor(s.v)}" onclick="flyAndHighlight(${s.lat},${s.lon},14)">`+
     `<small style="color:${vColor(s.v)}">${s.v.toFixed(0)}kV</small> ${s.name}</div>`
   ).join('');
 }
@@ -377,7 +379,7 @@ function buildLinesList(){
   const u=linesListData.filter(l=>{if(seen.has(l.name))return false;seen.add(l.name);return true;});
   const sorted=sortEntries(u,currentSort);
   document.getElementById('tab-lines').innerHTML=sorted.slice(0,300).map(l=>
-    `<div class="entry" style="border-color:${vColor(l.v)}" onclick="map.setView([${l.lat},${l.lon}],13)">`+
+    `<div class="entry" style="border-color:${vColor(l.v)}" onclick="flyAndHighlight(${l.lat},${l.lon},13)">`+
     `<small style="color:${vColor(l.v)}">${l.v.toFixed(0)}kV</small> ${l.name}</div>`
   ).join('');
 }
@@ -387,6 +389,32 @@ function showTab(t,btn){
   document.querySelectorAll('.tab-btns button').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
 }
+// 強調アニメーション
+let highlightMarker=null;
+function flyAndHighlight(lat,lon,zoom){
+  map.flyTo([lat,lon],zoom,{duration:0.8});
+  // 既存のハイライトを除去
+  if(highlightMarker){map.removeLayer(highlightMarker);highlightMarker=null;}
+  // パルスアニメーション
+  setTimeout(()=>{
+    highlightMarker=L.circleMarker([lat,lon],{
+      radius:20,color:'#ff0000',fillColor:'#ff0000',fillOpacity:0.3,weight:3
+    }).addTo(map);
+    let r=20,growing=false;
+    const pulse=setInterval(()=>{
+      r+=growing?2:-2;
+      if(r<=8)growing=true;
+      if(r>=25)growing=false;
+      highlightMarker.setRadius(r);
+    },50);
+    // 5秒後に消す
+    setTimeout(()=>{
+      clearInterval(pulse);
+      if(highlightMarker){map.removeLayer(highlightMarker);highlightMarker=null;}
+    },5000);
+  },900);
+}
+
 let currentSort='name';
 function sortList(mode){
   currentSort=mode;
