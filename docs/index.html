@@ -54,6 +54,7 @@ html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino San
   </div>
 
   <h3>表示モード</h3>
+  <small style="color:#888">※メッシュ表示ON時に有効</small>
   <select id="modeSelect" onchange="recolor()">
     <option value="total">総合スコア</option>
     <option value="slope">傾斜スコア</option>
@@ -65,16 +66,19 @@ html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino San
 
   <h3>AHP重み調整</h3>
   <label><input type="checkbox" id="chkCapacity" onchange="recolor()"> 空容量を考慮 (+10%)</label>
-  <small style="color:#888">※チェック時、空容量データを加味してスコア再計算</small>
+  <small style="color:#888">※メッシュ表示ON + 総合スコア選択時のみ有効</small>
 
   <h3>レイヤー</h3>
   <label><input type="checkbox" id="chkLines" checked onchange="toggle('lines')"> 送電線 (66kV以上)</label>
   <label><input type="checkbox" id="chkSubs" checked onchange="toggle('subs')"> 変電所</label>
   <label><input type="checkbox" id="chkBoundary" checked onchange="toggle('boundary')"> 県境</label>
   <label><input type="checkbox" id="chkRoads" onchange="toggle('roads')"> 主要道路</label>
+  <small style="color:#888;margin-left:18px">初回は外部API取得のため数秒かかります</small>
   <label><input type="checkbox" id="chkCapmap" onchange="toggle('capmap')"> 空容量マップ</label>
+  <small style="color:#888;margin-left:18px">配電用変電所91箇所の空容量を色分け表示</small>
 
   <h3>ハザードマップ</h3>
+  <small style="color:#888">国土交通省タイルを重畳表示（z17以降は拡大）</small>
   <label><input type="checkbox" id="chkFlood" onchange="toggleHazard('flood')"> 洪水浸水想定</label>
   <label><input type="checkbox" id="chkSediment" onchange="toggleHazard('sediment')"> 土砂災害警戒</label>
   <label><input type="checkbox" id="chkTsunami" onchange="toggleHazard('tsunami')"> 津波浸水想定</label>
