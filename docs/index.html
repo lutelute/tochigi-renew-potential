@@ -50,10 +50,10 @@ html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino San
 
   <h3>対象県</h3>
   <select id="prefSelect" onchange="switchPref(this.value)" style="font-size:13px;font-weight:bold">
+    <option value="all" selected>3県同時表示</option>
     <option value="tochigi">栃木県</option>
     <option value="chiba">千葉県</option>
     <option value="ibaraki">茨城県</option>
-    <option value="all">3県同時表示</option>
   </select>
 
   <h3>適地メッシュ</h3>
@@ -137,7 +137,7 @@ html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino San
 <script>
 const prefCenters={tochigi:[36.65,139.88],chiba:[35.60,140.12],ibaraki:[36.34,140.45]};
 let currentPref='tochigi';
-const map = L.map('map').setView(prefCenters.tochigi, 9);
+const map = L.map('map').setView([36.0, 140.0], 8);
 
 function clearAllLayers(){
   if(meshLayer){map.removeLayer(meshLayer);meshLayer=null;}
@@ -152,9 +152,11 @@ function clearAllLayers(){
   allPrefLayers.forEach(l=>map.removeLayer(l));
   allPrefLayers=[];
   subsData=[];linesListData=[];
-  _subsResolve=null;
   document.getElementById('tab-subs').innerHTML='';
   document.getElementById('tab-lines').innerHTML='';
+  // Reset subsReady promise
+  _subsResolve=null;
+  subsReady=new Promise(r=>{_subsResolve=r;});
 }
 let allPrefLayers=[];
 
@@ -280,7 +282,7 @@ let subsData=[], linesListData=[];
 let capacityData = null;
 let currentRes=1000;
 let _subsResolve;
-const subsReady = new Promise(r=>{_subsResolve=r;});
+let subsReady = new Promise(r=>{_subsResolve=r;});
 
 // Capacity data (embedded)
 const capDistData = [
@@ -573,7 +575,8 @@ function filterList(q){
 }
 
 // Init
-loadMesh(1000);loadLines();loadSubs();loadBoundary();
+// 初期表示: 3県同時
+switchPref('all');
 </script>
 </body>
 </html>
