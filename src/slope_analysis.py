@@ -1,18 +1,11 @@
 """
-栃木県 DEM傾斜解析スクリプト
+DEM傾斜解析スクリプト（県別対応）
 SRTM 1arc-second (~30m) DEMデータから傾斜角を計算し、
 再生可能エネルギー不適地（傾斜15度以上）をマスクする。
 
 使い方:
-    python slope_analysis.py                         # デフォルトパス（/tmp/srtm_data/）
-    python slope_analysis.py --dem-dir /path/to/hgt  # DEMファイルのディレクトリを指定
-
-DEM取得後に実行:
-    SRTM HGTファイル (N36E139.hgt, N36E140.hgt, N37E139.hgt, N37E140.hgt) を
-    --dem-dir で指定したディレクトリに配置してから実行してください。
-    ダウンロード例:
-        curl -o N36E139.hgt.gz https://s3.amazonaws.com/elevation-tiles-prod/skadi/N36/N36E139.hgt.gz
-        gunzip N36E139.hgt.gz
+    python slope_analysis.py -p tochigi
+    python slope_analysis.py -p chiba --dem-dir /path/to/hgt
 """
 import argparse
 import sys
@@ -25,12 +18,9 @@ from rasterio.transform import from_bounds
 from rasterio.features import geometry_mask
 from shapely.ops import unary_union
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-LAND_DIR = PROJECT_ROOT / "data" / "land"
-OUTPUT_DIR = PROJECT_ROOT / "data" / "land"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from config import PREFECTURES, get_land_dir, get_pref_config
 
-# 栃木県をカバーするSRTMタイル
-SRTM_TILES = ["N36E139", "N36E140", "N37E139", "N37E140"]
 # SRTM1 (1 arc-second) のサイズ
 SRTM1_SIZE = 3601
 
@@ -64,76 +54,62 @@ def tile_bounds(tile_name: str) -> tuple:
     return (lon, lat, lon + 1, lat + 1)
 
 
-def mosaic_srtm(dem_dir: Path) -> tuple:
+def mosaic_srtm(dem_dir: Path, srtm_tiles: list) -> tuple:
     """
     複数SRTMタイルをモザイクして結合する。
     Returns: (mosaic_array, transform, crs_wkt)
     """
-    # 全タイルのバウンド計算
-    all_bounds = [tile_bounds(t) for t in SRTM_TILES]
+    all_bounds = [tile_bounds(t) for t in srtm_tiles]
     min_lon = min(b[0] for b in all_bounds)
     min_lat = min(b[1] for b in all_bounds)
     max_lon = max(b[2] for b in all_bounds)
     max_lat = max(b[3] for b in all_bounds)
 
-    # タイルのグリッド配置を計算
     lon_tiles = sorted(set(b[0] for b in all_bounds))
-    lat_tiles = sorted(set(b[1] for b in all_bounds), reverse=True)  # 北から南
+    lat_tiles = sorted(set(b[1] for b in all_bounds), reverse=True)
 
     n_lat = len(lat_tiles)
     n_lon = len(lon_tiles)
 
-    # モザイク配列（タイル間の重複1ピクセルを除去）
-    tile_pixels = SRTM1_SIZE - 1  # 重複除去後
+    tile_pixels = SRTM1_SIZE - 1
     total_rows = n_lat * tile_pixels + 1
     total_cols = n_lon * tile_pixels + 1
     mosaic = np.full((total_rows, total_cols), np.nan, dtype=np.float32)
 
-    for tile_name in SRTM_TILES:
+    for tile_name in srtm_tiles:
         filepath = dem_dir / f"{tile_name}.hgt"
         if not filepath.exists():
             print(f"  WARNING: {filepath} が見つかりません。スキップします。")
             continue
 
         data = read_srtm_hgt(filepath)
-        # void値 (-32768) をNaNに
         data[data == -32768] = np.nan
 
         bounds = tile_bounds(tile_name)
         col_idx = lon_tiles.index(bounds[0])
-        row_idx = lat_tiles.index(bounds[1])  # 南緯で検索（lat_tilesは北→南順）
+        row_idx = lat_tiles.index(bounds[1])
 
         r0 = row_idx * tile_pixels
         c0 = col_idx * tile_pixels
         mosaic[r0 : r0 + SRTM1_SIZE, c0 : c0 + SRTM1_SIZE] = data
 
-    # Affine transform (北が上: 緯度は上から下へ減少)
-    res_x = (max_lon - min_lon) / (total_cols - 1)
-    res_y = (max_lat - min_lat) / (total_rows - 1)
     transform = from_bounds(min_lon, min_lat, max_lon, max_lat, total_cols, total_rows)
-
     return mosaic, transform, "EPSG:4326"
 
 
 def compute_slope(dem: np.ndarray, transform) -> np.ndarray:
-    """
-    DEMから傾斜角（度）を計算する。
-    地理座標系（度）のため、メートル換算して勾配を計算。
-    """
-    res_x = transform.a  # 経度方向の解像度（度）
-    res_y = abs(transform.e)  # 緯度方向の解像度（度）
+    """DEMから傾斜角（度）を計算する。"""
+    res_x = transform.a
+    res_y = abs(transform.e)
 
-    # 中央緯度を使ってメートル変換
-    # 1度 = 約111,320m (緯度方向), 1度 = 約111,320 * cos(lat) m (経度方向)
     center_lat = transform.f + transform.e * (dem.shape[0] / 2)
     lat_rad = np.radians(center_lat)
     m_per_deg_lat = 111_320.0
     m_per_deg_lon = 111_320.0 * np.cos(lat_rad)
 
-    cell_size_x = res_x * m_per_deg_lon  # メートル
-    cell_size_y = res_y * m_per_deg_lat  # メートル
+    cell_size_x = res_x * m_per_deg_lon
+    cell_size_y = res_y * m_per_deg_lat
 
-    # numpy.gradient で勾配計算
     dy, dx = np.gradient(dem, cell_size_y, cell_size_x)
     slope_rad = np.arctan(np.sqrt(dx**2 + dy**2))
     slope_deg = np.degrees(slope_rad)
@@ -141,33 +117,50 @@ def compute_slope(dem: np.ndarray, transform) -> np.ndarray:
     return slope_deg
 
 
-def clip_to_tochigi(
-    data: np.ndarray, transform, crs: str
+def clip_to_prefecture(
+    data: np.ndarray, transform, crs: str, pref: str, land_dir: Path
 ) -> tuple:
-    """栃木県の行政境界でクリップする"""
-    boundary_shp = LAND_DIR / "admin_boundary" / "N03-20240101_09.shp"
-    if not boundary_shp.exists():
-        # GeoJSONを試す
-        boundary_shp = LAND_DIR / "admin_boundary" / "N03-20240101_09.geojson"
-    if not boundary_shp.exists():
-        print("WARNING: 栃木県境界ファイルが見つかりません。クリップせずに出力します。")
+    """県の行政境界でクリップする"""
+    cfg = get_pref_config(pref)
+    code = cfg["code"]
+    name_ja = cfg["name_ja"]
+
+    # Try multiple possible boundary file paths
+    boundary_candidates = [
+        land_dir / "admin_boundary" / f"N03-20240101_{code}.shp",
+        land_dir / "admin_boundary" / f"N03-20240101_{code}.geojson",
+    ]
+    # Also search recursively for .shp or .geojson in admin_boundary
+    admin_dir = land_dir / "admin_boundary"
+    if admin_dir.exists():
+        for f in admin_dir.rglob("*.shp"):
+            if f not in boundary_candidates:
+                boundary_candidates.append(f)
+        for f in admin_dir.rglob("*.geojson"):
+            if f not in boundary_candidates:
+                boundary_candidates.append(f)
+
+    boundary_shp = None
+    for candidate in boundary_candidates:
+        if candidate.exists():
+            boundary_shp = candidate
+            break
+
+    if boundary_shp is None:
+        print(f"WARNING: {name_ja}境界ファイルが見つかりません。クリップせずに出力します。")
         return data, transform
 
-    print(f"  栃木県境界を読み込み: {boundary_shp}")
+    print(f"  {name_ja}境界を読み込み: {boundary_shp}")
     gdf = gpd.read_file(boundary_shp)
-    # CRS変換
     if gdf.crs and str(gdf.crs) != crs:
         gdf = gdf.to_crs(crs)
 
-    # 栃木県全体の外周を結合
-    tochigi_geom = unary_union(gdf.geometry)
-    tochigi_bounds = tochigi_geom.bounds  # (minx, miny, maxx, maxy)
+    pref_geom = unary_union(gdf.geometry)
+    pref_bounds = pref_geom.bounds
 
-    # バウンディングボックスでまず切り出し
     inv_transform = ~transform
-    col_min, row_max = inv_transform * (tochigi_bounds[0], tochigi_bounds[1])
-    col_max, row_min = inv_transform * (tochigi_bounds[2], tochigi_bounds[3])
-    # 整数に変換（少し余裕を持たせる）
+    col_min, row_max = inv_transform * (pref_bounds[0], pref_bounds[1])
+    col_max, row_min = inv_transform * (pref_bounds[2], pref_bounds[3])
     row_min = max(0, int(np.floor(row_min)) - 1)
     row_max = min(data.shape[0], int(np.ceil(row_max)) + 1)
     col_min = max(0, int(np.floor(col_min)) - 1)
@@ -176,12 +169,11 @@ def clip_to_tochigi(
     clipped = data[row_min:row_max, col_min:col_max].copy()
     new_transform = transform * rasterio.Affine.translation(col_min, row_min)
 
-    # ポリゴンでマスク
     mask = geometry_mask(
-        [tochigi_geom],
+        [pref_geom],
         out_shape=clipped.shape,
         transform=new_transform,
-        invert=False,  # True = ポリゴン内がTrue → invert=FalseでポリゴンがTrue
+        invert=False,
     )
     clipped[mask] = np.nan
 
@@ -190,7 +182,6 @@ def clip_to_tochigi(
 
 def compute_area_stats(slope: np.ndarray, transform) -> dict:
     """傾斜区分別の面積統計を計算"""
-    # ピクセルサイズ（メートル）の近似
     res_x = abs(transform.a)
     res_y = abs(transform.e)
     center_lat = transform.f + transform.e * (slope.shape[0] / 2)
@@ -250,18 +241,25 @@ def save_geotiff(data: np.ndarray, transform, crs: str, output_path: Path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="栃木県 DEM傾斜解析")
+    parser = argparse.ArgumentParser(description="DEM傾斜解析（県別対応）")
+    parser.add_argument(
+        "--prefecture", "-p",
+        type=str,
+        default="tochigi",
+        choices=list(PREFECTURES.keys()),
+        help="対象県 (default: tochigi)",
+    )
     parser.add_argument(
         "--dem-dir",
         type=Path,
-        default=Path("/tmp/srtm_data"),
-        help="SRTM HGTファイルのディレクトリ (default: /tmp/srtm_data)",
+        default=None,
+        help="SRTM HGTファイルのディレクトリ (default: data/{pref}/land/dem)",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=OUTPUT_DIR / "tochigi_slope.tif",
-        help="出力GeoTIFFのパス",
+        default=None,
+        help="出力GeoTIFFのパス (default: data/{pref}/land/{pref}_slope.tif)",
     )
     parser.add_argument(
         "--threshold",
@@ -271,19 +269,30 @@ def main():
     )
     args = parser.parse_args()
 
+    pref = args.prefecture
+    cfg = get_pref_config(pref)
+    name_ja = cfg["name_ja"]
+    srtm_tiles = cfg["srtm_tiles"]
+    land_dir = get_land_dir(pref)
+
+    dem_dir = args.dem_dir or (land_dir / "dem")
+    output_path = args.output or (land_dir / f"{pref}_slope.tif")
+
     print("=" * 50)
-    print("栃木県 DEM傾斜解析")
+    print(f"{name_ja} DEM傾斜解析")
     print("=" * 50)
 
     # 1. DEMモザイク
-    print("\n[1/5] SRTMタイルの読み込みとモザイク...")
-    missing = [t for t in SRTM_TILES if not (args.dem_dir / f"{t}.hgt").exists()]
+    print(f"\n[1/5] SRTMタイルの読み込みとモザイク...")
+    print(f"  タイル: {srtm_tiles}")
+    print(f"  DEMディレクトリ: {dem_dir}")
+    missing = [t for t in srtm_tiles if not (dem_dir / f"{t}.hgt").exists()]
     if missing:
         print(f"  ERROR: 以下のファイルが見つかりません: {missing}")
-        print(f"  --dem-dir に SRTM HGTファイルを配置してください。")
+        print(f"  まず download_land_data.py -p {pref} でDEMをダウンロードしてください。")
         sys.exit(1)
 
-    dem, transform, crs = mosaic_srtm(args.dem_dir)
+    dem, transform, crs = mosaic_srtm(dem_dir, srtm_tiles)
     print(f"  モザイクサイズ: {dem.shape[1]} x {dem.shape[0]} pixels")
     print(f"  標高範囲: {np.nanmin(dem):.0f} - {np.nanmax(dem):.0f} m")
 
@@ -292,16 +301,16 @@ def main():
     slope = compute_slope(dem, transform)
     print(f"  傾斜範囲: {np.nanmin(slope):.1f} - {np.nanmax(slope):.1f} 度")
 
-    # 3. 栃木県でクリップ
-    print("\n[3/5] 栃木県範囲でクリップ...")
-    slope_clipped, clip_transform = clip_to_tochigi(slope, transform, crs)
+    # 3. 県域でクリップ
+    print(f"\n[3/5] {name_ja}範囲でクリップ...")
+    slope_clipped, clip_transform = clip_to_prefecture(slope, transform, crs, pref, land_dir)
     valid_count = (~np.isnan(slope_clipped)).sum()
     print(f"  クリップ後サイズ: {slope_clipped.shape[1]} x {slope_clipped.shape[0]} pixels")
     print(f"  有効ピクセル数: {valid_count:,}")
 
     # 4. GeoTIFF保存
     print("\n[4/5] 結果をGeoTIFFで保存...")
-    save_geotiff(slope_clipped, clip_transform, crs, args.output)
+    save_geotiff(slope_clipped, clip_transform, crs, output_path)
 
     # 5. 面積統計
     print("\n[5/5] 傾斜区分別の面積統計...")
