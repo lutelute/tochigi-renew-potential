@@ -161,14 +161,15 @@ async function switchPref(pref){
   if(pref==='all'){
     currentPref='tochigi';
     map.setView([36.0,140.0],8);
+    currentPref='all';
+    // 統合タイル（重複なし）
+    loadMesh();
     const prefs=['tochigi','chiba','ibaraki'];
     for(const pr of prefs){
       await loadLinesForPref(pr);
       await loadSubsForPref(pr);
       await loadBoundaryForPref(pr);
-      loadMeshForPref(pr);
     }
-    currentPref='all';
     buildSubsList();buildLinesList();
   }else{
     currentPref=pref;
@@ -357,14 +358,7 @@ function loadMesh(){
 
 function switchScoreMode(mode){
   currentScoreMode=mode;
-  if(currentPref==='all'){
-    // 3県同時: 各県のメッシュレイヤーを再生成
-    allPrefLayers.forEach(l=>{if(l._url&&l._url.includes('/tiles_'))map.removeLayer(l);});
-    allPrefLayers=allPrefLayers.filter(l=>!(l._url&&l._url.includes('/tiles_')));
-    ['tochigi','chiba','ibaraki'].forEach(pr=>loadMeshForPref(pr));
-  }else{
-    loadMesh();
-  }
+  loadMesh();
 }
 
 function toggleMesh(){
