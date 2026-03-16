@@ -163,29 +163,31 @@ let allPrefLayers=[];
 
 async function switchPref(pref){
   clearAllLayers();
-  // Reset subsReady promise
-  const p=new Promise(r=>{_subsResolve=r;});
-  // Replace global subsReady (hacky but works)
-  window._subsReadyPromise=p;
-
   if(pref==='all'){
-    currentPref='tochigi'; // fallback for mesh
+    currentPref='tochigi';
     map.setView([36.0,140.0],8);
     const prefs=['tochigi','chiba','ibaraki'];
     for(const pr of prefs){
-      currentPref=pr;
       await loadLinesForPref(pr);
       await loadSubsForPref(pr);
       await loadBoundaryForPref(pr);
+      await loadMeshForPref(pr,currentRes);
     }
     currentPref='all';
-    loadMesh(currentRes);
-    if(_subsResolve)_subsResolve();
+    buildSubsList();buildLinesList();
   }else{
     currentPref=pref;
     map.setView(prefCenters[pref],9);
     loadMesh(currentRes);loadLines();loadSubs();loadBoundary();
   }
+}
+async function loadMeshForPref(pr,res){
+  try{
+    const r=await fetch(pr+'/mesh_'+res+'m.geojson');
+    const d=await r.json();
+    const ly=L.geoJSON(d,{style:meshStyle,onEachFeature:onMeshFeature}).addTo(map);
+    allPrefLayers.push(ly);
+  }catch(e){console.error('mesh load error for '+pr,e);}
 }
 
 async function loadLinesForPref(pr){

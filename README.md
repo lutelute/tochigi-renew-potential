@@ -1,8 +1,8 @@
-# tochigi-renew-potential
+# kanto-re-potential
 
-栃木県の再エネポテンシャル推定・適地評価・系統空容量統合ツール
+関東圏（栃木・千葉・茨城）の再エネポテンシャル推定・適地評価・系統空容量統合ツール
 
-**[Live Demo (GitHub Pages)](https://lutelute.github.io/tochigi-renew-potential/portal.html)**
+**[Live Demo (GitHub Pages)](https://lutelute.github.io/kanto-re-potential/index.html)**
 
 ## 概要
 
