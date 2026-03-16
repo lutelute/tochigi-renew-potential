@@ -51,8 +51,9 @@ html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino San
   <h3>対象県</h3>
   <select id="prefSelect" onchange="switchPref(this.value)" style="font-size:13px;font-weight:bold">
     <option value="tochigi">栃木県</option>
-    <option value="chiba" disabled>千葉県 (準備中)</option>
-    <option value="ibaraki" disabled>茨城県 (準備中)</option>
+    <option value="chiba">千葉県</option>
+    <option value="ibaraki">茨城県</option>
+    <option value="all">3県同時表示</option>
   </select>
 
   <h3>メッシュ</h3>
@@ -142,9 +143,7 @@ const prefCenters={tochigi:[36.65,139.88],chiba:[35.60,140.12],ibaraki:[36.34,14
 let currentPref='tochigi';
 const map = L.map('map').setView(prefCenters.tochigi, 9);
 
-function switchPref(pref){
-  currentPref=pref;
-  // Clear all layers
+function clearAllLayers(){
   if(meshLayer){map.removeLayer(meshLayer);meshLayer=null;}
   meshCache={};
   if(linesLayer){map.removeLayer(linesLayer);linesLayer=null;}
@@ -152,12 +151,84 @@ function switchPref(pref){
   if(boundaryLayer){map.removeLayer(boundaryLayer);boundaryLayer=null;}
   if(capMapLayer){map.removeLayer(capMapLayer);capMapLayer=null;}
   _capMapLoading=false;
+  // Clear multi-pref layers
+  allPrefLayers.forEach(l=>map.removeLayer(l));
+  allPrefLayers=[];
   subsData=[];linesListData=[];
+  _subsResolve=null;
   document.getElementById('tab-subs').innerHTML='';
   document.getElementById('tab-lines').innerHTML='';
-  // Reload
-  map.setView(prefCenters[pref],9);
-  loadMesh(currentRes);loadLines();loadSubs();loadBoundary();
+}
+let allPrefLayers=[];
+
+async function switchPref(pref){
+  clearAllLayers();
+  // Reset subsReady promise
+  const p=new Promise(r=>{_subsResolve=r;});
+  // Replace global subsReady (hacky but works)
+  window._subsReadyPromise=p;
+
+  if(pref==='all'){
+    currentPref='tochigi'; // fallback for mesh
+    map.setView([36.0,140.0],8);
+    const prefs=['tochigi','chiba','ibaraki'];
+    for(const pr of prefs){
+      currentPref=pr;
+      await loadLinesForPref(pr);
+      await loadSubsForPref(pr);
+      await loadBoundaryForPref(pr);
+    }
+    currentPref='all';
+    loadMesh(currentRes);
+    if(_subsResolve)_subsResolve();
+  }else{
+    currentPref=pref;
+    map.setView(prefCenters[pref],9);
+    loadMesh(currentRes);loadLines();loadSubs();loadBoundary();
+  }
+}
+
+async function loadLinesForPref(pr){
+  try{
+    const r=await fetch(pr+'/lines_66kv.geojson');
+    const d=await r.json();
+    const ly=L.geoJSON(d,{
+      style:f=>{const v=f.properties.voltage_kv||0;
+        return{color:vColor(v),weight:v>=500?6:v>=275?5:v>=154?3.5:2.5,opacity:0.7};},
+      onEachFeature:(f,l)=>{const n=f.properties.name||'';if(n)l.bindTooltip(n,{sticky:true});}
+    }).addTo(map);
+    allPrefLayers.push(ly);
+  }catch(e){}
+}
+async function loadSubsForPref(pr){
+  try{
+    const r=await fetch(pr+'/subs_66kv.geojson');
+    const d=await r.json();
+    const ly=L.layerGroup();
+    d.features.forEach(f=>{
+      const v=f.properties.voltage_kv||0;
+      const n=f.properties.name||'';
+      let lat,lon;const g=f.geometry;
+      if(g.type==='Point'){lon=g.coordinates[0];lat=g.coordinates[1];}
+      else if(g.type==='Polygon'){const c=g.coordinates[0];lat=c.reduce((s,p)=>s+p[1],0)/c.length;lon=c.reduce((s,p)=>s+p[0],0)/c.length;}
+      else if(g.type==='MultiPolygon'){const c=g.coordinates[0][0];lat=c.reduce((s,p)=>s+p[1],0)/c.length;lon=c.reduce((s,p)=>s+p[0],0)/c.length;}
+      if(!lat||!lon)return;
+      const m2=L.circleMarker([lat,lon],{radius:v>=275?12:v>=154?10:v>=66?8:6,
+        color:vColor(v),fillColor:vColor(v),fillOpacity:0.7,weight:2.5});
+      if(n)m2.bindTooltip(n,{permanent:v>=154,direction:'right',className:'sub-label'});
+      m2.addTo(ly);
+      if(n)subsData.push({name:n,v,lat,lon});
+    });
+    ly.addTo(map);allPrefLayers.push(ly);
+  }catch(e){}
+}
+async function loadBoundaryForPref(pr){
+  try{
+    const r=await fetch(pr+'/boundary.geojson');
+    const d=await r.json();
+    const ly=L.geoJSON(d,{style:{fillColor:'transparent',color:'#000',weight:4,fillOpacity:0}}).addTo(map);
+    allPrefLayers.push(ly);
+  }catch(e){}
 }
 
 // Hazard pane (above tiles, below overlays)
@@ -175,8 +246,11 @@ const bases = {
   '国土地理院': L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png',{attribution:'GSI',maxZoom:18}),
   '航空写真': L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg',{attribution:'GSI',maxZoom:18}),
 };
+// "なし"を追加して背景非表示を可能に
+const noBase = L.tileLayer('',{maxZoom:20});
+const basesWithNone = {'なし':noBase,...bases};
 bases['CartoDB'].addTo(map);
-L.control.layers(bases,null,{position:'topright'}).addTo(map);
+L.control.layers(basesWithNone,null,{position:'topright'}).addTo(map);
 
 // Hazard tile layers (国土地理院ハザードマップ)
 const hazardLayers = {
