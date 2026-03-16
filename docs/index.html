@@ -186,23 +186,6 @@ async function switchPref(pref){
   }
 }
 async function loadMeshForPref(pr,res){
-  // Try PMTiles first (zoom-aware, all resolutions)
-  const pmUrl=pr+'/mesh.pmtiles';
-  try{
-    const check=await fetch(pmUrl,{method:'HEAD'});
-    if(check.ok){
-      const ly=protomapsL.leafletLayer({
-        url:pmUrl,pane:'mesh',
-        paint_rules:[{dataLayer:'mesh',symbolizer:new protomapsL.PolygonSymbolizer({
-          fill:(z,f)=>{const s=f.props.total_score||0;
-            if(s>=80)return'#006400';if(s>=60)return'#228B22';if(s>=40)return'#DAA520';if(s>=20)return'#FF8C00';return'#DC143C';},
-          opacity:0.5})}],
-        label_rules:[]
-      });
-      ly.addTo(map);allPrefLayers.push(ly);return;
-    }
-  }catch(e){}
-  // Fallback to GeoJSON
   try{
     let r=await fetch(pr+'/mesh_'+res+'m.geojson');
     if(!r.ok&&res!==1000)r=await fetch(pr+'/mesh_1000m.geojson');
@@ -374,34 +357,8 @@ async function loadMesh(res){
   if(meshLayer){map.removeLayer(meshLayer);meshLayer=null;}
   if(pmtilesLayer){map.removeLayer(pmtilesLayer);pmtilesLayer=null;}
 
-  // Try PMTiles first (all resolutions in one file, zoom-aware)
-  const pmUrl=currentPref+'/mesh.pmtiles';
+  // GeoJSON loading (PMTiles disabled pending raster tile migration)
   showLoading(true);
-  try{
-    const check=await fetch(pmUrl,{method:'HEAD'});
-    if(check.ok){
-      pmtilesLayer=protomapsL.leafletLayer({
-        url:pmUrl,
-        pane:'mesh',
-        paint_rules:[{
-          dataLayer:'mesh',
-          symbolizer:new protomapsL.PolygonSymbolizer({
-            fill:(z,f)=>{
-              const s=f.props.total_score||0;
-              if(s>=80)return'#006400';if(s>=60)return'#228B22';if(s>=40)return'#DAA520';if(s>=20)return'#FF8C00';return'#DC143C';
-            },
-            opacity:0.5
-          })
-        }],
-        label_rules:[]
-      });
-      pmtilesLayer.addTo(map);
-      showLoading(false);
-      return;
-    }
-  }catch(e){console.warn('PMTiles not available, falling back to GeoJSON');}
-
-  // Fallback to GeoJSON
   if(meshCache[res]){renderMesh(meshCache[res]);showLoading(false);return;}
   try{
     const r=await fetch(currentPref+'/mesh_'+res+'m.geojson');
@@ -423,8 +380,7 @@ function recolor(){if(meshLayer)meshLayer.setStyle(meshStyle);}
 
 function toggleMesh(){
   const on=document.getElementById('chkMesh').checked;
-  const ly=pmtilesLayer||meshLayer;
-  if(ly){if(on)map.addLayer(ly);else map.removeLayer(ly);}
+  if(meshLayer){if(on)map.addLayer(meshLayer);else map.removeLayer(meshLayer);}
 }
 
 // Lines (太め)
