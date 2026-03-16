@@ -410,6 +410,23 @@ def process_prefecture(pref: str):
     log.info("Computing total score...")
     scores["total"] = compute_total_score(scores)
 
+    # Mask outside prefecture boundary
+    log.info("Masking to prefecture boundary...")
+    admin_dir = PROJECT_ROOT / "data" / pref / "land" / "admin_boundary"
+    shp_files = list(admin_dir.rglob("*.shp")) if admin_dir.exists() else []
+    if shp_files:
+        admin = gpd.read_file(shp_files[0])
+        boundary_geom = admin.union_all()
+        outside_mask = geometry_mask(
+            [boundary_geom], transform=transform,
+            out_shape=(height, width), invert=False
+        )
+        for name in scores:
+            scores[name][outside_mask] = 0  # 0 = transparent in RGBA
+        log.info("  Masked %d pixels outside boundary", outside_mask.sum())
+    else:
+        log.warning("  No admin boundary found, skipping mask")
+
     # Write individual score TIFs
     score_names = ["total", "slope", "grid_dist", "sub_dist", "land_use", "elevation"]
     for name in score_names:

@@ -370,6 +370,12 @@ function switchScoreMode(mode){
 function toggleMesh(){
   const on=document.getElementById('chkMesh').checked;
   if(rasterMeshLayer){if(on)map.addLayer(rasterMeshLayer);else map.removeLayer(rasterMeshLayer);}
+  // 3県同時表示時のタイルレイヤーもtoggle
+  allPrefLayers.forEach(l=>{
+    if(l._url&&l._url.includes('/tiles')){
+      if(on)map.addLayer(l);else map.removeLayer(l);
+    }
+  });
 }
 
 // Lines (太め)
