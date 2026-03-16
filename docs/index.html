@@ -165,6 +165,8 @@ let roadsLayer=null, capMapLayer=null;
 let subsData=[], linesListData=[];
 let capacityData = null;
 let currentRes=1000;
+let _subsResolve;
+const subsReady = new Promise(r=>{_subsResolve=r;});
 
 // Capacity data (embedded)
 const capDistData = [
@@ -311,7 +313,8 @@ async function loadSubs(){
     });
     subsLayer.addTo(map);
     buildSubsList();
-  }catch(e){console.error('loadSubs error:',e);}
+    _subsResolve();
+  }catch(e){console.error('loadSubs error:',e);_subsResolve();}
 }
 
 // Boundary
@@ -351,8 +354,12 @@ async function loadRoads(){
 }
 
 // Capacity map
-function loadCapMap(){
+let _capMapLoading=false;
+async function loadCapMap(){
   if(capMapLayer){map.addLayer(capMapLayer);return;}
+  if(_capMapLoading)return;
+  _capMapLoading=true;
+  await subsReady;          // ensure subsData is populated
   capMapLayer=L.layerGroup();
   subsData.forEach(s=>{
     const cd=capDistData.find(c=>s.name.includes(c.name));
@@ -362,7 +369,8 @@ function loadCapMap(){
       }).bindTooltip(`${s.name}: ${cd.cap}MW`,{permanent:true,direction:'right',className:'sub-label'}).addTo(capMapLayer);
     }
   });
-  capMapLayer.addTo(map);
+  // Only add to map if checkbox is still checked after async wait
+  if(document.getElementById('chkCapmap').checked) capMapLayer.addTo(map);
 }
 
 function toggle(what){
