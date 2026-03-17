@@ -196,6 +196,7 @@ async function loadLinesForPref(pr){
         return{color:vColor(v),weight:v>=500?6:v>=275?5:v>=154?3.5:2.5,opacity:0.7};},
       onEachFeature:(f,l)=>{const n=f.properties.name||'';if(n)l.bindTooltip(n,{sticky:true});}
     }).addTo(map);
+    ly._layerType='lines';
     allPrefLayers.push(ly);
   }catch(e){}
 }
@@ -218,7 +219,7 @@ async function loadSubsForPref(pr){
       m2.addTo(ly);
       if(n)subsData.push({name:n,v,lat,lon});
     });
-    ly.addTo(map);allPrefLayers.push(ly);
+    ly.addTo(map);ly._layerType='subs';allPrefLayers.push(ly);
   }catch(e){}
 }
 async function loadBoundaryForPref(pr){
@@ -226,7 +227,7 @@ async function loadBoundaryForPref(pr){
     const r=await fetch(pr+'/boundary.geojson');
     const d=await r.json();
     const ly=L.geoJSON(d,{style:{fillColor:'transparent',color:'#000',weight:4,fillOpacity:0}}).addTo(map);
-    allPrefLayers.push(ly);
+    ly._layerType='boundary';allPrefLayers.push(ly);
   }catch(e){}
 }
 
@@ -495,13 +496,21 @@ async function loadCapMap(){
 
 function toggle(what){
   const layers={lines:linesLayer,subs:subsLayer,boundary:boundaryLayer,roads:roadsLayer,capmap:capMapLayer};
-  const chk=document.getElementById('chk'+what.charAt(0).toUpperCase()+what.slice(1));
+  const chkId='chk'+what.charAt(0).toUpperCase()+what.slice(1);
+  const chk=document.getElementById(chkId);
   if(!chk)return;
   if(what==='roads'&&!roadsLayer&&chk.checked){loadRoads();return;}
   if(what==='capmap'&&!capMapLayer&&chk.checked){loadCapMap();return;}
+  // 単体県のレイヤー
   const ly=layers[what];
-  if(!ly)return;
-  if(chk.checked)map.addLayer(ly);else map.removeLayer(ly);
+  if(ly){if(chk.checked)map.addLayer(ly);else map.removeLayer(ly);}
+  // 3県同時表示のレイヤー（_layerTypeタグで判別）
+  allPrefLayers.forEach(l=>{
+    if(l._layerType===what){
+      if(chk.checked){if(!map.hasLayer(l))map.addLayer(l);}
+      else{if(map.hasLayer(l))map.removeLayer(l);}
+    }
+  });
 }
 
 function toggleHazard(type){
