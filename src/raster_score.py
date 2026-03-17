@@ -274,15 +274,44 @@ def compute_score_dist_line(pref: str, transform, width, height, crs) -> np.ndar
 
 # ── score: land use ──────────────────────────────────────────────
 def compute_score_land_use(pref: str, transform, width, height, crs) -> np.ndarray:
-    """Reclassify land use TIF if available, else default 70."""
+    """Read land use score. Prefer OSM rasterized TIF, fall back to L03-b TIFs."""
     lu_dir = PROJECT_ROOT / "data" / pref / "land" / "land_use"
-    tifs = sorted(lu_dir.glob("*.tif")) if lu_dir.exists() else []
+
+    # Prefer OSM land use (already scored, same CRS/grid as slope)
+    osm_path = lu_dir / "osm_land_use.tif" if lu_dir.exists() else None
+    if osm_path is not None and osm_path.exists():
+        log.info("  land_use: using OSM data %s", osm_path)
+        with rasterio.open(osm_path) as ds:
+            score = ds.read(1)
+        # The OSM TIF is already on the reference grid with score values
+        if score.shape == (height, width):
+            return score
+        # If shape differs, reproject
+        log.info("  land_use: reprojecting OSM data to reference grid")
+        with rasterio.open(osm_path) as ds:
+            src_data = ds.read(1)
+            src_transform = ds.transform
+            src_crs = ds.crs
+        dst = np.zeros((height, width), dtype=np.uint8)
+        reproject(
+            source=src_data,
+            destination=dst,
+            src_transform=src_transform,
+            src_crs=src_crs,
+            dst_transform=transform,
+            dst_crs=crs,
+            resampling=Resampling.nearest,
+        )
+        return dst
+
+    # Fall back to L03-b TIFs (国土数値情報)
+    tifs = sorted(lu_dir.glob("L03-b*.tif")) if lu_dir.exists() else []
 
     if not tifs:
         log.warning("  land_use: no TIF for %s, using default 70", pref)
         return np.full((height, width), 70, dtype=np.uint8)
 
-    log.info("  land_use: mosaicking %d TIFs", len(tifs))
+    log.info("  land_use: mosaicking %d L03-b TIFs", len(tifs))
     datasets = [rasterio.open(str(f)) for f in tifs]
     mosaic, mosaic_transform = merge(datasets)
     mosaic_crs = datasets[0].crs
