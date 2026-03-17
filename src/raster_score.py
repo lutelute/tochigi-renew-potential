@@ -165,6 +165,7 @@ def _distance_score(
         transform=transform,
         fill=0,
         dtype=np.uint8,
+        all_touched=True,
     )
 
     # EDT on inverted mask (True = no geometry = background for EDT)
@@ -247,6 +248,30 @@ def compute_score_sub_dist(pref: str, transform, width, height, crs) -> np.ndarr
     return _distance_score(geometries, transform, width, height, crs, breakpoints)
 
 
+# ── score: distribution line distance (66kV) ────────────────────
+def compute_score_dist_line(pref: str, transform, width, height, crs) -> np.ndarray:
+    """Distance to 66kV+ distribution lines (66kV <= voltage < 154kV)."""
+    lines_path = PROJECT_ROOT / "data" / pref / "grid" / f"{pref}_lines.geojson"
+    log.info("  dist_line: reading %s", lines_path)
+    gdf = gpd.read_file(lines_path)
+
+    # filter 66kV+ but < 154kV (distribution lines)
+    if "voltage_kv" in gdf.columns:
+        gdf = gdf[(gdf["voltage_kv"] >= 66) & (gdf["voltage_kv"] < 154)]
+    log.info("  dist_line: %d lines 66-154kV", len(gdf))
+
+    geometries = gdf.geometry.tolist()
+    breakpoints = [
+        (0, 100),
+        (1000, 85),
+        (3000, 60),
+        (5000, 35),
+        (10000, 10),
+        (15000, 0),
+    ]
+    return _distance_score(geometries, transform, width, height, crs, breakpoints)
+
+
 # ── score: land use ──────────────────────────────────────────────
 def compute_score_land_use(pref: str, transform, width, height, crs) -> np.ndarray:
     """Reclassify land use TIF if available, else default 70."""
@@ -303,6 +328,7 @@ def compute_total_score(scores: dict) -> np.ndarray:
     total = (
         scores["slope"].astype(np.float32) * w["slope"]
         + scores["grid_dist"].astype(np.float32) * w["grid_distance"]
+        + scores["dist_line"].astype(np.float32) * w["distribution_line_distance"]
         + scores["sub_dist"].astype(np.float32) * w["substation_distance"]
         + scores["land_use"].astype(np.float32) * w["land_use"]
         + scores["elevation"].astype(np.float32) * w["elevation"]
@@ -387,23 +413,27 @@ def process_prefecture(pref: str):
     scores = {}
 
     # 1) slope
-    log.info("[1/5] Computing slope score...")
+    log.info("[1/6] Computing slope score...")
     scores["slope"] = compute_score_slope(pref, transform, width, height, crs)
 
     # 2) elevation
-    log.info("[2/5] Computing elevation score...")
+    log.info("[2/6] Computing elevation score...")
     scores["elevation"] = compute_score_elevation(pref, transform, width, height, crs, bounds)
 
-    # 3) grid distance
-    log.info("[3/5] Computing grid distance score...")
+    # 3) grid distance (154kV+)
+    log.info("[3/6] Computing grid distance score...")
     scores["grid_dist"] = compute_score_grid_dist(pref, transform, width, height, crs)
 
-    # 4) substation distance
-    log.info("[4/5] Computing substation distance score...")
+    # 4) distribution line distance (66-154kV)
+    log.info("[4/6] Computing distribution line distance score...")
+    scores["dist_line"] = compute_score_dist_line(pref, transform, width, height, crs)
+
+    # 5) substation distance
+    log.info("[5/6] Computing substation distance score...")
     scores["sub_dist"] = compute_score_sub_dist(pref, transform, width, height, crs)
 
-    # 5) land use
-    log.info("[5/5] Computing land use score...")
+    # 6) land use
+    log.info("[6/6] Computing land use score...")
     scores["land_use"] = compute_score_land_use(pref, transform, width, height, crs)
 
     # total
@@ -428,7 +458,7 @@ def process_prefecture(pref: str):
         log.warning("  No admin boundary found, skipping mask")
 
     # Write individual score TIFs
-    score_names = ["total", "slope", "grid_dist", "sub_dist", "land_use", "elevation"]
+    score_names = ["total", "slope", "grid_dist", "dist_line", "sub_dist", "land_use", "elevation"]
     for name in score_names:
         tif_name = f"score_{name}.tif"
         write_score_tif(scores[name], output_dir / tif_name, transform, crs)

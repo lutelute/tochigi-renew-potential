@@ -41,7 +41,8 @@ PREFECTURES = {
 # AHP重み (全県共通)
 WEIGHTS = {
     "slope": 0.20,
-    "grid_distance": 0.25,
+    "grid_distance": 0.15,
+    "distribution_line_distance": 0.10,
     "substation_distance": 0.15,
     "land_use": 0.15,
     "elevation": 0.10,
