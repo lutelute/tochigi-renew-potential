@@ -214,7 +214,7 @@ async function loadSubsForPref(pr){
       else if(g.type==='MultiPolygon'){const c=g.coordinates[0][0];lat=c.reduce((s,p)=>s+p[1],0)/c.length;lon=c.reduce((s,p)=>s+p[0],0)/c.length;}
       if(!lat||!lon)return;
       const m2=L.circleMarker([lat,lon],{radius:v>=275?12:v>=154?10:v>=66?8:6,
-        color:vColor(v),fillColor:vColor(v),fillOpacity:0.7,weight:2.5});
+        color:vColor(v),fillColor:vColor(v),fillOpacity:0.7,weight:2.5,pane:'substations'});
       if(n)m2.bindTooltip(n,{permanent:v>=154,direction:'right',className:'sub-label'});
       m2.bindPopup(subPopup(f.properties),{maxWidth:300});
       m2.addTo(ly);
@@ -235,11 +235,15 @@ async function loadBoundaryForPref(pr){
 // Custom panes for z-order control
 map.createPane('mesh');
 map.getPane('mesh').style.zIndex = 300;
-map.getPane('mesh').style.pointerEvents = 'none'; // メッシュはクリック不要、下のレイヤーを透過
+map.getPane('mesh').style.pointerEvents = 'none';
 
 map.createPane('hazard');
 map.getPane('hazard').style.zIndex = 450;
 map.getPane('hazard').style.pointerEvents = 'none';
+
+// 変電所を送電線より上に（クリック優先）
+map.createPane('substations');
+map.getPane('substations').style.zIndex = 500;
 
 // Base layers
 const bases = {
@@ -476,7 +480,7 @@ async function loadSubs(){
       if(!lat||!lon)return;
       const radius=v>=275?12:v>=154?10:v>=66?8:6;
       const m=L.circleMarker([lat,lon],{
-        radius,color:vColor(v),fillColor:vColor(v),fillOpacity:0.7,weight:2.5
+        radius,color:vColor(v),fillColor:vColor(v),fillOpacity:0.7,weight:2.5,pane:'substations'
       });
       if(n)m.bindTooltip(n,{permanent:v>=154,direction:'right',className:'sub-label'});
       m.bindPopup(subPopup(f.properties),{maxWidth:300});
