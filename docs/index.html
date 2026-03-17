@@ -194,7 +194,7 @@ async function loadLinesForPref(pr){
     const ly=L.geoJSON(d,{
       style:f=>{const v=f.properties.voltage_kv||0;
         return{color:vColor(v),weight:v>=500?6:v>=275?5:v>=154?3.5:2.5,opacity:0.7};},
-      onEachFeature:(f,l)=>{const n=f.properties.name||'';if(n)l.bindTooltip(n,{sticky:true});}
+      onEachFeature:(f,l)=>{const n=f.properties.name||'';if(n)l.bindTooltip(n,{sticky:true});l.bindPopup(linePopup(f.properties),{maxWidth:300});}
     }).addTo(map);
     ly._layerType='lines';
     allPrefLayers.push(ly);
@@ -216,6 +216,7 @@ async function loadSubsForPref(pr){
       const m2=L.circleMarker([lat,lon],{radius:v>=275?12:v>=154?10:v>=66?8:6,
         color:vColor(v),fillColor:vColor(v),fillOpacity:0.7,weight:2.5});
       if(n)m2.bindTooltip(n,{permanent:v>=154,direction:'right',className:'sub-label'});
+      m2.bindPopup(subPopup(f.properties),{maxWidth:300});
       m2.addTo(ly);
       if(n)subsData.push({name:n,v,lat,lon});
     });
@@ -387,6 +388,7 @@ async function loadLines(){
       onEachFeature:(f,l)=>{
         const n=f.properties.name||'';
         if(n)l.bindTooltip(n,{sticky:true});
+        l.bindPopup(linePopup(f.properties),{maxWidth:300});
         if(n){
           const c=f.geometry.coordinates;
           let lat,lon;
@@ -398,6 +400,54 @@ async function loadLines(){
     }).addTo(map);
     buildLinesList();
   }catch(e){}
+}
+
+// --- Popup builders ---
+function subPopup(p){
+  const n=p.name||'不明';
+  const v=p.voltage_kv||0;
+  let html=`<div style="min-width:220px;font-size:12px">`;
+  html+=`<b style="font-size:14px">${n}</b><br>`;
+  html+=`<span style="color:${vColor(v)}">${v?v+'kV':'電圧不明'}</span>`;
+  if(p.operator)html+=` / ${p.operator}`;
+  if(p.cap_type){
+    html+=`<hr style="margin:4px 0"><b>${p.cap_type}</b><br>`;
+    if(p.cap_voltage)html+=`電圧: ${p.cap_voltage}<br>`;
+    if(p.cap_voltage_primary)html+=`電圧: ${p.cap_voltage_primary}/${p.cap_voltage_secondary}<br>`;
+    if(p.cap_units&&p.cap_units!='nan')html+=`台数: ${p.cap_units}<br>`;
+    if(p.cap_capacity_mw&&p.cap_capacity_mw!='nan')html+=`設備容量: ${p.cap_capacity_mw} MW<br>`;
+    if(p.cap_operational_mw&&p.cap_operational_mw!='nan')html+=`運用容量: ${p.cap_operational_mw} MW<br>`;
+    html+=`<hr style="margin:4px 0">`;
+    html+=`<b>空容量(当該): ${p.cap_available_mw||'-'} MW</b><br>`;
+    html+=`<b>空容量(上位系): ${p.cap_available_upper_mw||'-'} MW</b><br>`;
+    if(p.cap_n1&&p.cap_n1!='nan')html+=`N-1電制: ${p.cap_n1} (${p.cap_n1_mw||'-'}MW)<br>`;
+    if(p.cap_curtail&&p.cap_curtail!='nan'&&p.cap_curtail!='-')html+=`出力制御: ${p.cap_curtail}<br>`;
+    if(p.cap_remarks&&p.cap_remarks!='nan'&&p.cap_remarks!='')html+=`<hr style="margin:4px 0"><small>${p.cap_remarks}</small>`;
+  }
+  html+=`</div>`;
+  return html;
+}
+
+function linePopup(p){
+  const n=p.name||'不明';
+  const v=p.voltage_kv||0;
+  let html=`<div style="min-width:200px;font-size:12px">`;
+  html+=`<b style="font-size:14px">${n}</b><br>`;
+  html+=`<span style="color:${vColor(v)}">${v?v+'kV':'電圧不明'}</span>`;
+  if(p.cap_circuits&&p.cap_circuits!='nan')html+=` / ${p.cap_circuits}回線`;
+  if(p.cap_capacity_mw&&p.cap_capacity_mw!='nan'){
+    html+=`<hr style="margin:4px 0">`;
+    html+=`設備容量: ${p.cap_capacity_mw} MW<br>`;
+    if(p.cap_operational_mw&&p.cap_operational_mw!='nan')html+=`運用容量: ${p.cap_operational_mw} MW<br>`;
+    if(p.cap_constraint&&p.cap_constraint!='nan')html+=`制約要因: ${p.cap_constraint}<br>`;
+    html+=`<hr style="margin:4px 0">`;
+    html+=`<b>空容量(当該): ${p.cap_available_mw||'-'} MW</b><br>`;
+    html+=`<b>空容量(上位系): ${p.cap_available_upper_mw||'-'} MW</b><br>`;
+    if(p.cap_n1&&p.cap_n1!='nan')html+=`N-1電制: ${p.cap_n1} (${p.cap_n1_mw||'-'}MW)<br>`;
+    if(p.cap_remarks&&p.cap_remarks!='nan'&&p.cap_remarks!='')html+=`<hr style="margin:4px 0"><small>${p.cap_remarks}</small>`;
+  }
+  html+=`</div>`;
+  return html;
 }
 
 // Substations — Polygon/Pointをすべて centroid の CircleMarker に変換
@@ -429,6 +479,7 @@ async function loadSubs(){
         radius,color:vColor(v),fillColor:vColor(v),fillOpacity:0.7,weight:2.5
       });
       if(n)m.bindTooltip(n,{permanent:v>=154,direction:'right',className:'sub-label'});
+      m.bindPopup(subPopup(f.properties),{maxWidth:300});
       m.addTo(subsLayer);
       if(n)subsData.push({name:n,v,lat,lon});
     });
