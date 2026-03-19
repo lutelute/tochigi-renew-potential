@@ -58,7 +58,11 @@ html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino San
 
   <h3>適地メッシュ</h3>
   <label><input type="checkbox" id="chkMesh" checked onchange="toggleMesh()"> メッシュ表示</label>
-  <small style="color:#888">ラスタータイル配信（ズームで自動高解像度化）</small>
+  <div style="margin:4px 0 2px 18px">
+    <button class="res-btn active" id="btn30m" onclick="switchRes(30)">30m タイル</button>
+    <button class="res-btn" id="btn5m" onclick="switchRes(5)">5m 高精細</button>
+  </div>
+  <small style="color:#888">30m=タイル配信 / 5m=画像オーバーレイ（サーバー計算済み）</small>
 
   <h3>表示モード</h3>
   <select id="modeSelect" onchange="switchScoreMode(this.value)">
@@ -148,6 +152,7 @@ function clearAllLayers(){
   // Clear multi-pref layers
   allPrefLayers.forEach(l=>map.removeLayer(l));
   allPrefLayers=[];
+  remove5mLayers();
   subsData=[];linesListData=[];
   document.getElementById('tab-subs').innerHTML='';
   document.getElementById('tab-lines').innerHTML='';
@@ -163,8 +168,8 @@ async function switchPref(pref){
     currentPref='tochigi';
     map.setView([36.0,140.0],8);
     currentPref='all';
-    // 統合タイル（重複なし）
-    loadMesh();
+    // メッシュ読み込み（解像度に応じた方式）
+    if(currentMeshRes===5)load5mOverlay();else loadMesh();
     const prefs=['tochigi','chiba','ibaraki'];
     for(const pr of prefs){
       await loadLinesForPref(pr);
@@ -175,7 +180,8 @@ async function switchPref(pref){
   }else{
     currentPref=pref;
     map.setView(prefCenters[pref],9);
-    loadMesh();loadLines();loadSubs();loadBoundary();
+    if(currentMeshRes===5)load5mOverlay();else loadMesh();
+    loadLines();loadSubs();loadBoundary();
   }
 }
 function loadMeshForPref(pr){
@@ -347,6 +353,15 @@ function showLoading(v){document.getElementById('loading').style.display=v?'bloc
 
 let rasterMeshLayer=null;
 let currentScoreMode='total';
+let currentMeshRes=30;
+
+// 5m image overlay bounds (from raster_score.py 5m computation)
+const img5mConfig={
+  tochigi:{url:'tochigi/tochigi_5m.png',bounds:[[36.19914,139.32607],[37.15540,140.29260]]},
+  chiba:{url:'chiba/chiba_5m.png',bounds:[[34.89765,139.73906],[36.0,140.88196]]},
+  ibaraki:{url:'ibaraki/ibaraki_5m.png',bounds:[[35.73879,139.68740],[36.94584,140.85252]]},
+};
+let img5mLayers=[];
 
 function getTileDir(pref,mode){
   // tiles_total, tiles_slope, tiles_grid_dist, etc. — fallback to tiles/ for legacy
@@ -365,7 +380,42 @@ function loadMesh(){
 
 function switchScoreMode(mode){
   currentScoreMode=mode;
-  loadMesh();
+  if(currentMeshRes===30)loadMesh();
+  // 5m only supports total score for now
+}
+
+function remove5mLayers(){
+  img5mLayers.forEach(l=>map.removeLayer(l));
+  img5mLayers=[];
+}
+
+function load5mOverlay(){
+  remove5mLayers();
+  const prefs=(currentPref==='all')?['tochigi','chiba','ibaraki']:[currentPref];
+  prefs.forEach(pr=>{
+    const cfg=img5mConfig[pr];
+    if(!cfg)return;
+    const ly=L.imageOverlay(cfg.url,cfg.bounds,{opacity:0.75,pane:'mesh'});
+    if(document.getElementById('chkMesh').checked)ly.addTo(map);
+    img5mLayers.push(ly);
+  });
+}
+
+function switchRes(res){
+  currentMeshRes=res;
+  document.getElementById('btn30m').classList.toggle('active',res===30);
+  document.getElementById('btn5m').classList.toggle('active',res===5);
+  // score mode selector: 5m only supports total
+  document.getElementById('modeSelect').disabled=(res===5);
+  if(res===30){
+    remove5mLayers();
+    loadMesh();
+  }else{
+    // remove 30m tiles
+    if(rasterMeshLayer){map.removeLayer(rasterMeshLayer);rasterMeshLayer=null;}
+    allPrefLayers.forEach(l=>{if(l._url&&l._url.includes('/tiles'))map.removeLayer(l);});
+    load5mOverlay();
+  }
 }
 
 function toggleMesh(){
@@ -377,6 +427,8 @@ function toggleMesh(){
       if(on)map.addLayer(l);else map.removeLayer(l);
     }
   });
+  // 5m image overlays
+  img5mLayers.forEach(l=>{if(on)map.addLayer(l);else map.removeLayer(l);});
 }
 
 // Lines (太め)
