@@ -5438,7 +5438,7 @@
         "_display_name": "大原町変電所",
         "_name_source": "geocoded",
         "_enriched_by": "geocode_promotion",
-        "voltage_kv": 0.0,
+        "voltage_kv": 66.0,
         "cap_type": null,
         "cap_voltage": null,
         "cap_units": null,
@@ -5453,7 +5453,7 @@
         "cap_remarks": null,
         "cap_voltage_primary": null,
         "cap_voltage_secondary": null,
-        "voltage_source": "unknown"
+        "voltage_source": "capacity_csv_partial"
       },
       "geometry": {
         "type": "Polygon",
@@ -7781,7 +7781,7 @@
         "_display_name": "大間々町高津戸変電所",
         "_name_source": "geocoded",
         "_enriched_by": "geocode_promotion",
-        "voltage_kv": 0.0,
+        "voltage_kv": 66.0,
         "cap_type": null,
         "cap_voltage": null,
         "cap_units": null,
@@ -7796,7 +7796,7 @@
         "cap_remarks": null,
         "cap_voltage_primary": null,
         "cap_voltage_secondary": null,
-        "voltage_source": "unknown"
+        "voltage_source": "capacity_csv_partial"
       },
       "geometry": {
         "type": "Polygon",
@@ -17370,7 +17370,7 @@
         "_display_name": null,
         "_name_source": null,
         "_enriched_by": null,
-        "voltage_kv": 0.0,
+        "voltage_kv": 66,
         "cap_type": null,
         "cap_voltage": null,
         "cap_units": null,
@@ -17385,7 +17385,7 @@
         "cap_remarks": null,
         "cap_voltage_primary": null,
         "cap_voltage_secondary": null,
-        "voltage_source": "unknown"
+        "voltage_source": "inferred_tepco"
       },
       "geometry": {
         "type": "Polygon",
@@ -18863,7 +18863,7 @@
         "_display_name": null,
         "_name_source": null,
         "_enriched_by": null,
-        "voltage_kv": 0.0,
+        "voltage_kv": 66.0,
         "cap_type": "配電用変電所",
         "cap_voltage": null,
         "cap_units": "3",
@@ -18878,7 +18878,7 @@
         "cap_remarks": "上位系（送栃木154kV12）による制約",
         "cap_voltage_primary": "66",
         "cap_voltage_secondary": "6.6以下",
-        "voltage_source": "unknown"
+        "voltage_source": "capacity_csv_partial"
       },
       "geometry": {
         "type": "Polygon",
@@ -22577,7 +22577,7 @@
         "_display_name": "真岡市変電所",
         "_name_source": "geocoded",
         "_enriched_by": "geocode_promotion",
-        "voltage_kv": 0.0,
+        "voltage_kv": 66.0,
         "cap_type": "配電用変電所",
         "cap_voltage": null,
         "cap_units": "2",
@@ -22592,7 +22592,7 @@
         "cap_remarks": "上位系（送栃木66kV38）による制約",
         "cap_voltage_primary": "66",
         "cap_voltage_secondary": "6.6以下",
-        "voltage_source": "unknown"
+        "voltage_source": "capacity_csv_partial"
       },
       "geometry": {
         "type": "Polygon",
@@ -23253,7 +23253,7 @@
         "_display_name": "下石上変電所",
         "_name_source": "geocoded",
         "_enriched_by": "geocode_promotion",
-        "voltage_kv": 0.0,
+        "voltage_kv": 66.0,
         "cap_type": "配電用変電所",
         "cap_voltage": null,
         "cap_units": "3",
@@ -23268,7 +23268,7 @@
         "cap_remarks": "上位系（変栃木66kV1）による制約",
         "cap_voltage_primary": "66",
         "cap_voltage_secondary": "6.6以下",
-        "voltage_source": "unknown"
+        "voltage_source": "capacity_csv_partial"
       },
       "geometry": {
         "type": "Polygon",

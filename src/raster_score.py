@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Raster-based 30m resolution score calculation for renewable energy potential.
-Generates individual score GeoTIFFs and map tiles for each prefecture.
+Raster-based score calculation for renewable energy potential.
+Supports configurable resolution (5m / 10m / 30m).
 
 Usage:
-    python src/raster_score.py --prefecture tochigi
-    python src/raster_score.py --prefecture all
+    python src/raster_score.py --prefecture tochigi                    # 30m (default)
+    python src/raster_score.py --prefecture tochigi --resolution 5     # 5m (server向け)
+    python src/raster_score.py --prefecture all --resolution 10        # 10m 全県
 """
 
 import argparse
@@ -69,24 +70,79 @@ def score_to_rgba(score_arr: np.ndarray) -> np.ndarray:
     return rgba
 
 
-# ── helper: reference grid from slope TIF ────────────────────────
-def load_reference_grid(pref: str):
-    """Return (transform, width, height, crs, bounds) from slope TIF."""
+# ── helper: reference grid ────────────────────────────────────────
+def load_reference_grid(pref: str, resolution_m: int = 30):
+    """Return (transform, width, height, crs, bounds) at the requested resolution.
+
+    resolution_m=30 uses the slope TIF natively.
+    resolution_m=5 or 10 creates a denser grid covering the same extent.
+    """
     slope_path = PROJECT_ROOT / "data" / pref / "land" / f"{pref}_slope.tif"
     with rasterio.open(slope_path) as ds:
-        return ds.transform, ds.width, ds.height, ds.crs, ds.bounds
+        native_transform = ds.transform
+        native_w, native_h = ds.width, ds.height
+        crs = ds.crs
+        bounds = ds.bounds
+
+    # Native resolution in degrees (SRTM ~30m → ~0.000278°)
+    native_res_x = abs(native_transform.a)
+    native_res_y = abs(native_transform.e)
+
+    # Approximate native resolution in metres
+    centre_lat = (bounds.top + bounds.bottom) / 2
+    m_per_deg = 111320 * np.cos(np.radians(centre_lat))
+    native_m = native_res_x * m_per_deg  # ≈ 30m
+
+    if resolution_m >= native_m * 0.9:
+        # Use native grid as-is
+        log.info("Using native reference grid (%d x %d, ~%.0fm)", native_w, native_h, native_m)
+        return native_transform, native_w, native_h, crs, bounds
+
+    # Build a finer grid at the requested resolution
+    scale = native_m / resolution_m
+    new_w = int(np.ceil(native_w * scale))
+    new_h = int(np.ceil(native_h * scale))
+    new_transform = from_bounds(bounds.left, bounds.bottom, bounds.right, bounds.top, new_w, new_h)
+
+    log.info(
+        "Custom reference grid: %d x %d pixels (~%dm) — %.1fx denser than native",
+        new_w, new_h, resolution_m, scale,
+    )
+    return new_transform, new_w, new_h, crs, bounds
+
+
+def _resample_to_grid(src_path: Path, transform, width, height, crs,
+                      resampling=Resampling.bilinear, band=1) -> np.ndarray:
+    """Read a single-band raster and reproject/resample to the reference grid."""
+    with rasterio.open(src_path) as ds:
+        src_data = ds.read(band)
+        src_transform = ds.transform
+        src_crs = ds.crs
+        if (ds.width == width and ds.height == height
+                and ds.transform.almost_equals(transform)):
+            return src_data  # already matches
+    dst = np.zeros((height, width), dtype=src_data.dtype)
+    reproject(
+        source=src_data,
+        destination=dst,
+        src_transform=src_transform,
+        src_crs=src_crs,
+        dst_transform=transform,
+        dst_crs=crs,
+        resampling=resampling,
+    )
+    return dst
 
 
 # ── score: slope ─────────────────────────────────────────────────
 def compute_score_slope(pref: str, transform, width, height, crs) -> np.ndarray:
-    """Read slope TIF and reclassify to 0-100."""
+    """Read slope TIF, resample to reference grid, reclassify to 0-100."""
     slope_path = PROJECT_ROOT / "data" / pref / "land" / f"{pref}_slope.tif"
     log.info("  slope: reading %s", slope_path)
-    with rasterio.open(slope_path) as ds:
-        slope = ds.read(1)
-    # handle nodata
+    slope = _resample_to_grid(slope_path, transform, width, height, crs,
+                              resampling=Resampling.bilinear)
     slope = np.nan_to_num(slope, nan=0.0)
-    score = np.zeros_like(slope, dtype=np.uint8)
+    score = np.zeros((height, width), dtype=np.uint8)
     score[slope < 3] = 100
     score[(slope >= 3) & (slope < 5)] = 85
     score[(slope >= 5) & (slope < 8)] = 70
@@ -313,11 +369,11 @@ def compute_score_land_use(pref: str, transform, width, height, crs) -> np.ndarr
 
     log.info("  land_use: mosaicking %d L03-b TIFs", len(tifs))
     datasets = [rasterio.open(str(f)) for f in tifs]
-    mosaic, mosaic_transform = merge(datasets)
+    mosaic_data, mosaic_transform = merge(datasets)
     mosaic_crs = datasets[0].crs
     for ds in datasets:
         ds.close()
-    lu_raw = mosaic[0]
+    lu_raw = mosaic_data[0]
 
     # reproject to reference grid
     lu = np.zeros((height, width), dtype=np.uint8)
@@ -428,13 +484,17 @@ def generate_tiles(rgba_tif: Path, tiles_dir: Path, zoom="7-14"):
 
 
 # ── main pipeline per prefecture ─────────────────────────────────
-def process_prefecture(pref: str):
+def process_prefecture(pref: str, resolution_m: int = 30):
     log.info("=" * 60)
-    log.info("Processing %s", pref.upper())
+    log.info("Processing %s @ %dm resolution", pref.upper(), resolution_m)
     log.info("=" * 60)
 
-    transform, width, height, crs, bounds = load_reference_grid(pref)
-    log.info("Reference grid: %d x %d pixels, CRS=%s", width, height, crs)
+    transform, width, height, crs, bounds = load_reference_grid(pref, resolution_m)
+    log.info("Reference grid: %d x %d pixels (%d MP), CRS=%s",
+             width, height, width * height // 1_000_000, crs)
+
+    # resolution suffix for output files (30m = no suffix for backwards compat)
+    res_suffix = f"_{resolution_m}m" if resolution_m != 30 else ""
 
     output_dir = PROJECT_ROOT / "output" / pref
     docs_dir = PROJECT_ROOT / "docs" / pref
@@ -486,52 +546,80 @@ def process_prefecture(pref: str):
     else:
         log.warning("  No admin boundary found, skipping mask")
 
+    # Zoom levels based on resolution
+    if resolution_m <= 5:
+        zoom = "7-17"
+    elif resolution_m <= 10:
+        zoom = "7-16"
+    else:
+        zoom = "7-14"
+
     # Write individual score TIFs
     score_names = ["total", "slope", "grid_dist", "dist_line", "sub_dist", "land_use", "elevation"]
     for name in score_names:
-        tif_name = f"score_{name}.tif"
+        tif_name = f"score_{name}{res_suffix}.tif"
         write_score_tif(scores[name], output_dir / tif_name, transform, crs)
 
     # Generate RGBA TIFs and tiles for each score
     for name in score_names:
-        rgba_path = output_dir / f"score_{name}_rgba.tif"
+        rgba_path = output_dir / f"score_{name}{res_suffix}_rgba.tif"
         write_rgba_tif(scores[name], rgba_path, transform, crs)
 
-        tile_dir_name = f"tiles_{name}" if name != "total" else "tiles"
+        tile_dir_name = f"tiles_{name}{res_suffix}" if name != "total" else f"tiles{res_suffix}"
         tiles_path = docs_dir / tile_dir_name
-        generate_tiles(rgba_path, tiles_path)
+        generate_tiles(rgba_path, tiles_path, zoom=zoom)
 
         # Also generate separate tiles_total directory
         if name == "total":
-            tiles_total_path = docs_dir / "tiles_total"
+            tiles_total_path = docs_dir / f"tiles_total{res_suffix}"
             if tiles_total_path != tiles_path:
-                generate_tiles(rgba_path, tiles_total_path)
+                generate_tiles(rgba_path, tiles_total_path, zoom=zoom)
 
     # Also copy total score TIF to docs for web access
-    total_tif_src = output_dir / "score_total.tif"
-    total_tif_dst = docs_dir / "mesh_score.tif"
+    total_tif_src = output_dir / f"score_total{res_suffix}.tif"
+    total_tif_dst = docs_dir / f"mesh_score{res_suffix}.tif"
     shutil.copy2(total_tif_src, total_tif_dst)
-    log.info("  copied score_total.tif -> docs/%s/mesh_score.tif", pref)
+    log.info("  copied %s -> docs/%s/%s", total_tif_src.name, pref, total_tif_dst.name)
 
-    log.info("DONE: %s", pref)
+    log.info("DONE: %s @ %dm", pref, resolution_m)
 
 
 # ── CLI ──────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser(description="Raster score calculation (30m)")
+    parser = argparse.ArgumentParser(
+        description="Raster score calculation (configurable resolution: 5m / 10m / 30m)"
+    )
     parser.add_argument(
         "--prefecture", "-p",
         default="all",
         choices=["tochigi", "chiba", "ibaraki", "all"],
         help="Prefecture to process (default: all)",
     )
+    parser.add_argument(
+        "--resolution", "-r",
+        type=int,
+        default=30,
+        help="Raster resolution in metres (default: 30). Use 5 for high-res server computation.",
+    )
     args = parser.parse_args()
+
+    resolution_m = args.resolution
+    if resolution_m < 1:
+        parser.error("Resolution must be >= 1m")
+
+    # Warn about memory for high-res
+    if resolution_m <= 5:
+        log.warning(
+            "Resolution %dm is very high — expect large memory usage. "
+            "Recommended to run on the compute server.",
+            resolution_m,
+        )
 
     prefs = list(PREFECTURES.keys()) if args.prefecture == "all" else [args.prefecture]
 
     for pref in prefs:
         try:
-            process_prefecture(pref)
+            process_prefecture(pref, resolution_m=resolution_m)
         except Exception:
             log.exception("FAILED: %s", pref)
             continue

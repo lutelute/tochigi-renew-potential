@@ -685,7 +685,7 @@
         "_display_name": null,
         "_name_source": null,
         "_enriched_by": null,
-        "voltage_kv": 0.0,
+        "voltage_kv": 0,
         "cap_type": null,
         "cap_voltage_primary": null,
         "cap_voltage_secondary": null,
@@ -700,7 +700,7 @@
         "cap_curtail": null,
         "cap_remarks": null,
         "cap_voltage": null,
-        "voltage_source": "unknown"
+        "voltage_source": "inferred_gas_facility"
       },
       "geometry": {
         "type": "Point",
@@ -3855,7 +3855,7 @@
         "_display_name": null,
         "_name_source": null,
         "_enriched_by": null,
-        "voltage_kv": 0.0,
+        "voltage_kv": 66,
         "cap_type": null,
         "cap_voltage_primary": null,
         "cap_voltage_secondary": null,
@@ -3870,7 +3870,7 @@
         "cap_curtail": null,
         "cap_remarks": null,
         "cap_voltage": null,
-        "voltage_source": "unknown"
+        "voltage_source": "inferred_tepco"
       },
       "geometry": {
         "type": "Polygon",
@@ -4051,7 +4051,7 @@
         "_display_name": null,
         "_name_source": null,
         "_enriched_by": null,
-        "voltage_kv": 0.0,
+        "voltage_kv": 66,
         "cap_type": null,
         "cap_voltage_primary": null,
         "cap_voltage_secondary": null,
@@ -4066,7 +4066,7 @@
         "cap_curtail": null,
         "cap_remarks": null,
         "cap_voltage": null,
-        "voltage_source": "unknown"
+        "voltage_source": "inferred_tepco"
       },
       "geometry": {
         "type": "Polygon",
@@ -6527,7 +6527,7 @@
         "_display_name": "下目黒一丁目変電所",
         "_name_source": "geocoded",
         "_enriched_by": "geocode_promotion",
-        "voltage_kv": 0.0,
+        "voltage_kv": 66,
         "cap_type": null,
         "cap_voltage_primary": null,
         "cap_voltage_secondary": null,
@@ -6542,7 +6542,7 @@
         "cap_curtail": null,
         "cap_remarks": null,
         "cap_voltage": null,
-        "voltage_source": "unknown"
+        "voltage_source": "inferred_tepco"
       },
       "geometry": {
         "type": "Polygon",
@@ -11853,7 +11853,7 @@
         "_display_name": "宝町一丁目変電所",
         "_name_source": "geocoded",
         "_enriched_by": "geocode_promotion",
-        "voltage_kv": 0.0,
+        "voltage_kv": 66,
         "cap_type": null,
         "cap_voltage_primary": null,
         "cap_voltage_secondary": null,
@@ -11868,7 +11868,7 @@
         "cap_curtail": null,
         "cap_remarks": null,
         "cap_voltage": null,
-        "voltage_source": "unknown"
+        "voltage_source": "inferred_tepco"
       },
       "geometry": {
         "type": "Polygon",
@@ -15731,7 +15731,7 @@
         "_display_name": "本羽田三丁目変電所",
         "_name_source": "geocoded",
         "_enriched_by": "geocode_promotion",
-        "voltage_kv": 0.0,
+        "voltage_kv": 66,
         "cap_type": null,
         "cap_voltage_primary": null,
         "cap_voltage_secondary": null,
@@ -15746,7 +15746,7 @@
         "cap_curtail": null,
         "cap_remarks": null,
         "cap_voltage": null,
-        "voltage_source": "unknown"
+        "voltage_source": "inferred_tepco"
       },
       "geometry": {
         "type": "Polygon",
@@ -17949,7 +17949,7 @@
         "_display_name": null,
         "_name_source": null,
         "_enriched_by": null,
-        "voltage_kv": 0.0,
+        "voltage_kv": 66,
         "cap_type": null,
         "cap_voltage_primary": null,
         "cap_voltage_secondary": null,
@@ -17964,7 +17964,7 @@
         "cap_curtail": null,
         "cap_remarks": null,
         "cap_voltage": null,
-        "voltage_source": "unknown"
+        "voltage_source": "inferred_tepco"
       },
       "geometry": {
         "type": "Polygon",
@@ -19999,7 +19999,7 @@
         "_display_name": null,
         "_name_source": null,
         "_enriched_by": null,
-        "voltage_kv": 0.0,
+        "voltage_kv": 66.0,
         "cap_type": "配電用変電所",
         "cap_voltage_primary": "66",
         "cap_voltage_secondary": "6.6以下",
@@ -20014,7 +20014,7 @@
         "cap_curtail": "有り",
         "cap_remarks": "上位系（送33）による制約",
         "cap_voltage": null,
-        "voltage_source": "unknown"
+        "voltage_source": "capacity_csv_partial"
       },
       "geometry": {
         "type": "Polygon",
@@ -20105,7 +20105,7 @@
         "_display_name": null,
         "_name_source": null,
         "_enriched_by": null,
-        "voltage_kv": 0.0,
+        "voltage_kv": 66.0,
         "cap_type": "配電用変電所",
         "cap_voltage_primary": "66",
         "cap_voltage_secondary": "6.6以下",
@@ -20120,7 +20120,7 @@
         "cap_curtail": "有り",
         "cap_remarks": "上位系（送千葉66kV81）による 制約",
         "cap_voltage": null,
-        "voltage_source": "unknown"
+        "voltage_source": "capacity_csv_partial"
       },
       "geometry": {
         "type": "Polygon",
@@ -20717,7 +20717,7 @@
         "_display_name": "江戸川台西四丁目変電所",
         "_name_source": "geocoded",
         "_enriched_by": "geocode_promotion",
-        "voltage_kv": 0.0,
+        "voltage_kv": 66.0,
         "cap_type": "配電用変電所",
         "cap_voltage_primary": "66",
         "cap_voltage_secondary": "6.6以下",
@@ -20732,7 +20732,7 @@
         "cap_curtail": "-",
         "cap_remarks": "nan",
         "cap_voltage": null,
-        "voltage_source": "unknown"
+        "voltage_source": "capacity_csv_partial"
       },
       "geometry": {
         "type": "Polygon",
@@ -39961,7 +39961,7 @@
         "_display_name": "東和二丁目変電所",
         "_name_source": "geocoded",
         "_enriched_by": "geocode_promotion",
-        "voltage_kv": 0.0,
+        "voltage_kv": 66,
         "cap_type": null,
         "cap_voltage_primary": null,
         "cap_voltage_secondary": null,
@@ -39976,7 +39976,7 @@
         "cap_curtail": null,
         "cap_remarks": null,
         "cap_voltage": null,
-        "voltage_source": "unknown"
+        "voltage_source": "inferred_tepco"
       },
       "geometry": {
         "type": "Polygon",
@@ -43885,7 +43885,7 @@
         "_display_name": "久里浜八丁目変電所",
         "_name_source": "geocoded",
         "_enriched_by": "geocode_promotion",
-        "voltage_kv": 0.0,
+        "voltage_kv": 66,
         "cap_type": null,
         "cap_voltage_primary": null,
         "cap_voltage_secondary": null,
@@ -43900,7 +43900,7 @@
         "cap_curtail": null,
         "cap_remarks": null,
         "cap_voltage": null,
-        "voltage_source": "unknown"
+        "voltage_source": "inferred_tepco"
       },
       "geometry": {
         "type": "Polygon",
@@ -44101,7 +44101,7 @@
         "_display_name": "舞浜(大字)変電所",
         "_name_source": "geocoded",
         "_enriched_by": "geocode_promotion",
-        "voltage_kv": 0.0,
+        "voltage_kv": 66.0,
         "cap_type": "配電用変電所",
         "cap_voltage_primary": "66",
         "cap_voltage_secondary": "6.6以下",
@@ -44116,7 +44116,7 @@
         "cap_curtail": "有り",
         "cap_remarks": "上位系（送47）による制約",
         "cap_voltage": null,
-        "voltage_source": "unknown"
+        "voltage_source": "capacity_csv_partial"
       },
       "geometry": {
         "type": "Polygon",
@@ -51035,7 +51035,7 @@
         "_display_name": "古河市変電所",
         "_name_source": "geocoded",
         "_enriched_by": "geocode_promotion",
-        "voltage_kv": 0.0,
+        "voltage_kv": 66.0,
         "cap_type": null,
         "cap_voltage_primary": null,
         "cap_voltage_secondary": null,
@@ -51050,7 +51050,7 @@
         "cap_curtail": null,
         "cap_remarks": null,
         "cap_voltage": null,
-        "voltage_source": "unknown"
+        "voltage_source": "capacity_csv_partial"
       },
       "geometry": {
         "type": "Polygon",
