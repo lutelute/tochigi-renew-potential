@@ -62,7 +62,8 @@ html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino San
     <button class="res-btn active" id="btn30m" onclick="switchRes(30)">30m タイル</button>
     <button class="res-btn" id="btn5m" onclick="switchRes(5)">5m 高精細</button>
   </div>
-  <small style="color:#888">30m=タイル配信 / 5m=画像オーバーレイ（サーバー計算済み）</small>
+  <small style="color:#888">30m=タイル配信 / 5m=画像オーバーレイ</small><br>
+  <small id="warn5m" style="color:#cc6600;display:none">5m: PNG読み込みに数秒〜十数秒かかります</small>
 
   <h3>表示モード</h3>
   <select id="modeSelect" onchange="switchScoreMode(this.value)">
@@ -356,11 +357,16 @@ let currentScoreMode='total';
 let currentMeshRes=30;
 
 // 5m image overlay bounds (from raster_score.py 5m computation)
-const img5mConfig={
-  tochigi:{url:'tochigi/tochigi_5m.png',bounds:[[36.19914,139.32607],[37.15540,140.29260]]},
-  chiba:{url:'chiba/chiba_5m.png',bounds:[[34.89765,139.73906],[36.0,140.88196]]},
-  ibaraki:{url:'ibaraki/ibaraki_5m.png',bounds:[[35.73879,139.68740],[36.94584,140.85252]]},
+const img5mBounds={
+  tochigi:[[36.19914,139.32607],[37.15540,140.29260]],
+  chiba:[[34.89765,139.73906],[36.0,140.88196]],
+  ibaraki:[[35.73879,139.68740],[36.94584,140.85252]],
 };
+// score mode -> PNG filename mapping
+function get5mUrl(pref,mode){
+  if(mode==='total')return pref+'/'+pref+'_5m.png';
+  return pref+'/'+pref+'_'+mode+'_5m.png';
+}
 let img5mLayers=[];
 
 function getTileDir(pref,mode){
@@ -381,7 +387,7 @@ function loadMesh(){
 function switchScoreMode(mode){
   currentScoreMode=mode;
   if(currentMeshRes===30)loadMesh();
-  // 5m only supports total score for now
+  else load5mOverlay();  // reload 5m with new score mode
 }
 
 function remove5mLayers(){
@@ -393,9 +399,10 @@ function load5mOverlay(){
   remove5mLayers();
   const prefs=(currentPref==='all')?['tochigi','chiba','ibaraki']:[currentPref];
   prefs.forEach(pr=>{
-    const cfg=img5mConfig[pr];
-    if(!cfg)return;
-    const ly=L.imageOverlay(cfg.url,cfg.bounds,{opacity:0.75,pane:'mesh'});
+    const bounds=img5mBounds[pr];
+    if(!bounds)return;
+    const url=get5mUrl(pr,currentScoreMode);
+    const ly=L.imageOverlay(url,bounds,{opacity:0.75,pane:'mesh'});
     if(document.getElementById('chkMesh').checked)ly.addTo(map);
     img5mLayers.push(ly);
   });
@@ -405,8 +412,7 @@ function switchRes(res){
   currentMeshRes=res;
   document.getElementById('btn30m').classList.toggle('active',res===30);
   document.getElementById('btn5m').classList.toggle('active',res===5);
-  // score mode selector: 5m only supports total
-  document.getElementById('modeSelect').disabled=(res===5);
+  document.getElementById('warn5m').style.display=(res===5)?'inline':'none';
   if(res===30){
     remove5mLayers();
     loadMesh();
