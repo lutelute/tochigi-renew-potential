@@ -484,7 +484,7 @@ def generate_tiles(rgba_tif: Path, tiles_dir: Path, zoom="7-14"):
 
 
 # ── main pipeline per prefecture ─────────────────────────────────
-def process_prefecture(pref: str, resolution_m: int = 30):
+def process_prefecture(pref: str, resolution_m: int = 30, skip_tiles: bool = False):
     log.info("=" * 60)
     log.info("Processing %s @ %dm resolution", pref.upper(), resolution_m)
     log.info("=" * 60)
@@ -565,21 +565,25 @@ def process_prefecture(pref: str, resolution_m: int = 30):
         rgba_path = output_dir / f"score_{name}{res_suffix}_rgba.tif"
         write_rgba_tif(scores[name], rgba_path, transform, crs)
 
-        tile_dir_name = f"tiles_{name}{res_suffix}" if name != "total" else f"tiles{res_suffix}"
-        tiles_path = docs_dir / tile_dir_name
-        generate_tiles(rgba_path, tiles_path, zoom=zoom)
+        if not skip_tiles:
+            tile_dir_name = f"tiles_{name}{res_suffix}" if name != "total" else f"tiles{res_suffix}"
+            tiles_path = docs_dir / tile_dir_name
+            generate_tiles(rgba_path, tiles_path, zoom=zoom)
 
-        # Also generate separate tiles_total directory
-        if name == "total":
-            tiles_total_path = docs_dir / f"tiles_total{res_suffix}"
-            if tiles_total_path != tiles_path:
-                generate_tiles(rgba_path, tiles_total_path, zoom=zoom)
+            # Also generate separate tiles_total directory
+            if name == "total":
+                tiles_total_path = docs_dir / f"tiles_total{res_suffix}"
+                if tiles_total_path != tiles_path:
+                    generate_tiles(rgba_path, tiles_total_path, zoom=zoom)
 
-    # Also copy total score TIF to docs for web access
-    total_tif_src = output_dir / f"score_total{res_suffix}.tif"
-    total_tif_dst = docs_dir / f"mesh_score{res_suffix}.tif"
-    shutil.copy2(total_tif_src, total_tif_dst)
-    log.info("  copied %s -> docs/%s/%s", total_tif_src.name, pref, total_tif_dst.name)
+    if not skip_tiles:
+        # Also copy total score TIF to docs for web access
+        total_tif_src = output_dir / f"score_total{res_suffix}.tif"
+        total_tif_dst = docs_dir / f"mesh_score{res_suffix}.tif"
+        shutil.copy2(total_tif_src, total_tif_dst)
+        log.info("  copied %s -> docs/%s/%s", total_tif_src.name, pref, total_tif_dst.name)
+    else:
+        log.info("  Tile generation skipped (--skip-tiles)")
 
     log.info("DONE: %s @ %dm", pref, resolution_m)
 
@@ -601,6 +605,11 @@ def main():
         default=30,
         help="Raster resolution in metres (default: 30). Use 5 for high-res server computation.",
     )
+    parser.add_argument(
+        "--skip-tiles",
+        action="store_true",
+        help="Skip tile generation (gdal2tiles). Useful when GDAL is not installed.",
+    )
     args = parser.parse_args()
 
     resolution_m = args.resolution
@@ -619,7 +628,7 @@ def main():
 
     for pref in prefs:
         try:
-            process_prefecture(pref, resolution_m=resolution_m)
+            process_prefecture(pref, resolution_m=resolution_m, skip_tiles=args.skip_tiles)
         except Exception:
             log.exception("FAILED: %s", pref)
             continue
