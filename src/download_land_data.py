@@ -155,7 +155,7 @@ def main():
         type=str,
         default="tochigi",
         choices=list(PREFECTURES.keys()),
-        help="対象県 (default: tochigi)",
+        help="対象都道府県 (default: tochigi)",
     )
     parser.add_argument(
         "--skip-dem",

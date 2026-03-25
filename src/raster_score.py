@@ -596,7 +596,7 @@ def main():
     parser.add_argument(
         "--prefecture", "-p",
         default="all",
-        choices=["tochigi", "chiba", "ibaraki", "all"],
+        choices=list(PREFECTURES.keys()) + ["all"],
         help="Prefecture to process (default: all)",
     )
     parser.add_argument(

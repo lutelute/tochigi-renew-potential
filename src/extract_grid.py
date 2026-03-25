@@ -1,9 +1,10 @@
 """
 電力系統データを All-Japan-Grid から抽出し、
 空容量CSVと結合して GeoJSON として出力する。
-複数県対応版 (tochigi / chiba / ibaraki)
+全国47都道府県対応版
 """
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -15,8 +16,8 @@ from shapely.geometry import box
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config import PREFECTURES, get_grid_dir, get_pref_config
 
-# パス設定
-ALL_JAPAN_GRID = Path("/tmp/All-Japan-Grid-ref/data")
+# パス設定 (環境変数で上書き可能)
+ALL_JAPAN_GRID = Path(os.environ.get("ALL_JAPAN_GRID_DIR", "/tmp/All-Japan-Grid-ref/data"))
 
 
 def load_area_geojson(grid_area: str, kind: str) -> gpd.GeoDataFrame:
@@ -59,7 +60,7 @@ def main():
     parser = argparse.ArgumentParser(description="電力系統データ抽出 (県別)")
     parser.add_argument("-p", "--prefecture", required=True,
                         choices=list(PREFECTURES.keys()),
-                        help="対象県 (tochigi/chiba/ibaraki)")
+                        help="対象都道府県")
     args = parser.parse_args()
 
     pref = args.prefecture

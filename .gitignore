@@ -18,6 +18,14 @@ data/*/grid/*_roads.geojson
 # PDFは転載禁止のため除外
 data/*/*.pdf
 
+# バッチ実行ログ・チェックポイント
+logs/
+data/batch_checkpoint.json
+data/batch_progress.txt
+
+# ラスタースコア出力 (大容量)
+output/*/*.tif
+
 # Python
 __pycache__/
 *.pyc
