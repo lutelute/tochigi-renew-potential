@@ -125,17 +125,22 @@ out geom;
     req = urllib.request.Request(OVERPASS_URL, data=data)
     req.add_header("User-Agent", "tochigi-renew-potential/1.0")
 
-    for attempt in range(3):
+    max_attempts = 12  # 最大12回リトライ (合計最大 ~1時間待機)
+    for attempt in range(max_attempts):
         try:
+            # リクエストオブジェクトは毎回新規作成 (再利用不可のため)
+            req = urllib.request.Request(OVERPASS_URL, data=data)
+            req.add_header("User-Agent", "japan-re-potential/1.0")
             with urllib.request.urlopen(req, timeout=timeout + 30) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
             log.info("  Got %d elements from Overpass", len(result.get("elements", [])))
             return result
         except Exception as e:
-            log.warning("  Overpass attempt %d failed: %s", attempt + 1, e)
-            if attempt < 2:
-                wait = 30 * (attempt + 1)
-                log.info("  Waiting %ds before retry...", wait)
+            # 指数バックオフ: 30, 60, 120, 240, 300, 300, ... 秒 (上限5分)
+            wait = min(30 * (2 ** attempt), 300)
+            log.warning("  Overpass attempt %d/%d failed: %s — waiting %ds",
+                        attempt + 1, max_attempts, e, wait)
+            if attempt < max_attempts - 1:
                 time.sleep(wait)
             else:
                 raise

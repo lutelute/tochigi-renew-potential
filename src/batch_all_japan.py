@@ -1,23 +1,17 @@
 #!/usr/bin/env python3
 """
-全国47都道府県 バッチオーケストレーター
+全国47都道府県 バッチオーケストレーター (v3: 2フェーズ方式)
 
-チェックポイント機能付きで都道府県ごとに5ステップを順次実行:
-  1. download (DEM + 国土数値情報)
-  2. extract_grid (All-Japan-Grid から系統データ抽出)
-  3. slope (傾斜解析)
-  4. osm_land_use (Overpass API で土地利用取得)
-  5. raster_score (ラスタースコア計算)
+Phase 1: 並列で各県の download → extract_grid → slope を実行 (外部API不要)
+Phase 2: Overpass API を排他制御で順次実行 (osm_land_use)
+Phase 3: 並列で raster_score を実行
+
+各フェーズ内で失敗した県はスキップし、最後にリトライキューに回す。
+Overpass API が不安定でも Phase 1/3 は完走する。
 
 Usage:
-    # 全国実行 (5m, 2並列, レジューム対応)
     python src/batch_all_japan.py --resolution 5 --resume --workers 2
-
-    # 福井県のみテスト (30m)
     python src/batch_all_japan.py -p fukui --resolution 30
-
-    # 特定の県から再開
-    python src/batch_all_japan.py --resolution 5 --resume --start-from nagano
 """
 
 import argparse
@@ -55,20 +49,17 @@ log = logging.getLogger(__name__)
 
 # ── チェックポイント ─────────────────────────────────────────
 CHECKPOINT_FILE = PROJECT_ROOT / "data" / "batch_checkpoint.json"
-
-# ── 進捗ファイル (外部から監視用) ──────────────────────────────
 PROGRESS_FILE = PROJECT_ROOT / "data" / "batch_progress.txt"
 
-# ── スレッドセーフ用ロック ────────────────────────────────────
 _checkpoint_lock = threading.Lock()
 _progress_lock = threading.Lock()
-_overpass_lock = threading.Lock()  # Overpass API 排他制御
 
 
 def load_checkpoint() -> dict:
-    if CHECKPOINT_FILE.exists():
-        return json.loads(CHECKPOINT_FILE.read_text(encoding="utf-8"))
-    return {}
+    with _checkpoint_lock:
+        if CHECKPOINT_FILE.exists():
+            return json.loads(CHECKPOINT_FILE.read_text(encoding="utf-8"))
+        return {}
 
 
 def save_checkpoint(cp: dict):
@@ -80,7 +71,6 @@ def save_checkpoint(cp: dict):
 
 
 def update_progress(pref: str, step: str, status: str, detail: str = ""):
-    """進捗ファイルを更新 (外部からtailで監視可能)"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{now}] {pref:25s} | {step:15s} | {status:10s} | {detail}\n"
     with _progress_lock:
@@ -88,335 +78,305 @@ def update_progress(pref: str, step: str, status: str, detail: str = ""):
             f.write(line)
 
 
-# ── ステップ定義 ─────────────────────────────────────────────
-STEPS = ["download", "extract_grid", "slope", "osm_land_use", "raster_score"]
+def mark_step_done(cp: dict, pref: str, step: str, resolution: int):
+    with _checkpoint_lock:
+        entry = cp.setdefault(pref, {"completed_steps": []})
+        if step not in entry.get("completed_steps", []):
+            entry.setdefault("completed_steps", []).append(step)
+        entry["last_update"] = datetime.now().isoformat()
+        entry["resolution"] = resolution
+    save_checkpoint(cp)
 
 
-def run_step(pref: str, step: str, resolution: int, skip_tiles: bool) -> bool:
+def is_step_done(cp: dict, pref: str, step: str) -> bool:
+    with _checkpoint_lock:
+        return step in cp.get(pref, {}).get("completed_steps", [])
+
+
+def mark_completed(cp: dict, pref: str):
+    with _checkpoint_lock:
+        cp.setdefault(pref, {})["status"] = "completed"
+        cp[pref]["last_update"] = datetime.now().isoformat()
+    save_checkpoint(cp)
+
+
+# ── ステップ実行 ─────────────────────────────────────────────
+def run_step(pref: str, step: str, resolution: int) -> bool:
     """各ステップをsubprocessで実行。成功=True"""
     src_dir = PROJECT_ROOT / "src"
     python = sys.executable
 
     env = os.environ.copy()
-    # サーバーのAll-Japan-Gridパスを環境変数で設定
     if "ALL_JAPAN_GRID_DIR" not in env:
         candidate = Path.home() / "All-Japan-Grid-ref" / "data"
         if candidate.exists():
             env["ALL_JAPAN_GRID_DIR"] = str(candidate)
 
-    if step == "download":
-        cmd = [python, str(src_dir / "download_land_data.py"), "-p", pref]
-    elif step == "extract_grid":
-        cmd = [python, str(src_dir / "extract_grid.py"), "-p", pref]
-    elif step == "slope":
-        cmd = [python, str(src_dir / "slope_analysis.py"), "-p", pref]
-    elif step == "osm_land_use":
-        cmd = [python, str(src_dir / "fetch_osm_land_use.py"), "-p", pref]
-    elif step == "raster_score":
-        cmd = [python, str(src_dir / "raster_score.py"), "-p", pref,
-               "--resolution", str(resolution), "--skip-tiles"]
-    else:
+    cmd_map = {
+        "download": [python, str(src_dir / "download_land_data.py"), "-p", pref],
+        "extract_grid": [python, str(src_dir / "extract_grid.py"), "-p", pref],
+        "slope": [python, str(src_dir / "slope_analysis.py"), "-p", pref],
+        "osm_land_use": [python, str(src_dir / "fetch_osm_land_use.py"), "-p", pref],
+        "raster_score": [python, str(src_dir / "raster_score.py"), "-p", pref,
+                         "--resolution", str(resolution), "--skip-tiles"],
+    }
+
+    cmd = cmd_map.get(step)
+    if not cmd:
         log.error("Unknown step: %s", step)
         return False
 
     step_log = LOG_DIR / f"{pref}_{step}_{timestamp}.log"
-    log.info("  [%s] Running: %s", pref, " ".join(cmd))
+    log.info("  [%s] Running %s", pref, step)
 
     try:
         with open(step_log, "w", encoding="utf-8") as flog:
             result = subprocess.run(
-                cmd,
-                stdout=flog,
-                stderr=subprocess.STDOUT,
-                timeout=7200,  # 2時間タイムアウト
-                cwd=str(PROJECT_ROOT),
-                env=env,
+                cmd, stdout=flog, stderr=subprocess.STDOUT,
+                timeout=7200, cwd=str(PROJECT_ROOT), env=env,
             )
         if result.returncode == 0:
-            log.info("  [%s] [OK] %s completed", pref, step)
+            log.info("  [%s] OK: %s", pref, step)
             return True
         else:
-            log.error("  [%s] [FAIL] %s returncode=%d", pref, step, result.returncode)
+            log.error("  [%s] FAIL: %s (rc=%d)", pref, step, result.returncode)
             try:
                 lines = step_log.read_text(encoding="utf-8").strip().split("\n")
-                for line in lines[-5:]:
+                for line in lines[-3:]:
                     log.error("    | %s", line)
             except Exception:
                 pass
             return False
     except subprocess.TimeoutExpired:
-        log.error("  [%s] [TIMEOUT] %s (>2h)", pref, step)
+        log.error("  [%s] TIMEOUT: %s (>2h)", pref, step)
         return False
     except Exception as e:
-        log.error("  [%s] [ERROR] %s: %s", pref, step, e)
+        log.error("  [%s] ERROR: %s: %s", pref, step, e)
         return False
 
 
-def process_prefecture(pref: str, resolution: int, checkpoint: dict,
-                       skip_tiles: bool) -> bool:
-    """1県を全ステップ処理。チェックポイント更新。"""
-    cfg = PREFECTURES[pref]
-    name_ja = cfg["name_ja"]
-
-    with _checkpoint_lock:
-        completed_steps = list(checkpoint.get(pref, {}).get("completed_steps", []))
-
+# ── フェーズ実行 ─────────────────────────────────────────────
+def run_phase_parallel(phase_name: str, pref_list: list, steps: list,
+                       resolution: int, cp: dict, workers: int) -> list:
+    """複数ステップを並列で実行。失敗した県のリストを返す。"""
     log.info("=" * 60)
-    log.info("Processing: %s (%s)", pref, name_ja)
-    log.info("  Resolution: %dm", resolution)
-    log.info("  Completed steps: %s", completed_steps)
+    log.info("PHASE: %s (%d prefectures, %d workers)", phase_name, len(pref_list), workers)
+    log.info("  Steps: %s", steps)
     log.info("=" * 60)
 
-    update_progress(pref, "START", "started", f"resolution={resolution}m")
+    failed = []
 
-    all_ok = True
-    for step in STEPS:
-        if step in completed_steps:
-            log.info("  [%s] [SKIP] %s (already completed)", pref, step)
-            update_progress(pref, step, "skipped", "already completed")
-            continue
+    def _process_one(pref):
+        for step in steps:
+            if is_step_done(cp, pref, step):
+                log.info("  [%s] SKIP %s (done)", pref, step)
+                update_progress(pref, step, "skipped", "already done")
+                continue
 
-        log.info("[%s] Step: %s", pref, step)
-        update_progress(pref, step, "running")
+            update_progress(pref, step, "running")
+            ok = run_step(pref, step, resolution)
+            if ok:
+                mark_step_done(cp, pref, step, resolution)
+                update_progress(pref, step, "completed")
+            else:
+                update_progress(pref, step, "FAILED")
+                return False
+        return True
 
-        # Overpass API は排他制御 + リトライ
-        if step == "osm_land_use":
-            success = _run_overpass_with_lock(pref, resolution, skip_tiles)
-        else:
-            success = run_step(pref, step, resolution, skip_tiles)
+    if workers <= 1:
+        for pref in pref_list:
+            if not _process_one(pref):
+                failed.append(pref)
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(_process_one, p): p for p in pref_list}
+            for future in as_completed(futures):
+                pref = futures[future]
+                try:
+                    if not future.result():
+                        failed.append(pref)
+                except Exception as e:
+                    log.exception("  [%s] Unhandled error: %s", pref, e)
+                    failed.append(pref)
 
-        if success:
-            completed_steps.append(step)
-            with _checkpoint_lock:
-                checkpoint.setdefault(pref, {})["completed_steps"] = completed_steps
-                checkpoint[pref]["last_update"] = datetime.now().isoformat()
-                checkpoint[pref]["resolution"] = resolution
-            save_checkpoint(checkpoint)
-            update_progress(pref, step, "completed")
-        else:
-            update_progress(pref, step, "FAILED")
-            log.error("  [%s] Step %s failed. Moving on.", pref, step)
-            with _checkpoint_lock:
-                checkpoint.setdefault(pref, {})["failed_step"] = step
-                checkpoint[pref]["last_update"] = datetime.now().isoformat()
-            save_checkpoint(checkpoint)
-            all_ok = False
+    log.info("PHASE %s done: %d OK, %d failed",
+             phase_name, len(pref_list) - len(failed), len(failed))
+    return failed
+
+
+def run_phase_overpass(pref_list: list, resolution: int, cp: dict) -> list:
+    """Overpass APIを順次実行（排他制御＋指数バックオフ）。
+    失敗した県はキューに戻して最大3周リトライする。"""
+    step = "osm_land_use"
+
+    # 既に完了済みを除外
+    remaining = [p for p in pref_list if not is_step_done(cp, p, step)]
+    if not remaining:
+        log.info("PHASE Overpass: all already done, skipping")
+        return []
+
+    log.info("=" * 60)
+    log.info("PHASE: Overpass API (%d prefectures, sequential)", len(remaining))
+    log.info("=" * 60)
+
+    max_rounds = 3  # 全体を最大3周
+    for round_num in range(max_rounds):
+        if not remaining:
             break
 
-    if all_ok:
-        with _checkpoint_lock:
-            checkpoint.setdefault(pref, {})["status"] = "completed"
-            checkpoint[pref]["last_update"] = datetime.now().isoformat()
-        save_checkpoint(checkpoint)
-        update_progress(pref, "ALL", "completed", f"all {len(STEPS)} steps done")
+        if round_num > 0:
+            wait = 300 * round_num  # 2周目: 5分, 3周目: 10分
+            log.info("  Round %d/%d: %d remaining, waiting %ds before retry round...",
+                     round_num + 1, max_rounds, len(remaining), wait)
+            time.sleep(wait)
 
-    return all_ok
+        still_failed = []
+        for i, pref in enumerate(remaining):
+            log.info("  [Overpass %d/%d, round %d] %s",
+                     i + 1, len(remaining), round_num + 1, pref)
+            update_progress(pref, step, "running",
+                            f"round {round_num + 1}/{max_rounds}")
 
+            ok = run_step(pref, step, resolution)
 
-def _run_overpass_with_lock(pref: str, resolution: int, skip_tiles: bool) -> bool:
-    """Overpass API呼び出しをロックで排他制御。失敗時はリトライ。"""
-    max_retries = 3
-    for attempt in range(max_retries):
-        log.info("  [%s] Waiting for Overpass lock (attempt %d/%d)...",
-                 pref, attempt + 1, max_retries)
-        with _overpass_lock:
-            log.info("  [%s] Overpass lock acquired", pref)
-            success = run_step(pref, "osm_land_use", resolution, skip_tiles)
-            if success:
-                # ロック解放後にクールダウン (他ワーカーがすぐ叩かないように)
-                log.info("  [%s] Overpass done, cooldown 30s...", pref)
-                time.sleep(30)
-                return True
+            if ok:
+                mark_step_done(cp, pref, step, resolution)
+                update_progress(pref, step, "completed")
+                # クールダウン: 成功後30秒待つ
+                if i < len(remaining) - 1:
+                    log.info("  [%s] Cooldown 30s...", pref)
+                    time.sleep(30)
             else:
-                log.warning("  [%s] Overpass failed, cooldown 60s before retry...", pref)
-                time.sleep(60)
+                update_progress(pref, step, "FAILED",
+                                f"round {round_num + 1}/{max_rounds}")
+                still_failed.append(pref)
+                # 失敗時は長めに待つ (APIが回復するのを待つ)
+                wait = min(120 * (2 ** round_num), 600)
+                log.warning("  [%s] Overpass failed, waiting %ds...", pref, wait)
+                time.sleep(wait)
 
-    return False
+        remaining = still_failed
+
+    if remaining:
+        log.error("  Overpass: %d prefectures failed after %d rounds: %s",
+                  len(remaining), max_rounds, ", ".join(remaining))
+    else:
+        log.info("  Overpass: all completed successfully")
+
+    return remaining
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="全国47都道府県 バッチ計算オーケストレーター"
+        description="全国47都道府県 バッチ計算オーケストレーター (3フェーズ方式)"
     )
-    parser.add_argument(
-        "--prefecture", "-p",
-        default=None,
-        help="特定の都道府県のみ実行 (カンマ区切りで複数指定可)",
-    )
-    parser.add_argument(
-        "--resolution", "-r",
-        type=int,
-        default=5,
-        help="計算解像度 [m] (default: 5)",
-    )
-    parser.add_argument(
-        "--workers", "-w",
-        type=int,
-        default=1,
-        help="並列ワーカー数 (default: 1)",
-    )
-    parser.add_argument(
-        "--resume",
-        action="store_true",
-        help="チェックポイントから再開",
-    )
-    parser.add_argument(
-        "--start-from",
-        default=None,
-        help="指定した都道府県から開始 (それより前はスキップ)",
-    )
-    parser.add_argument(
-        "--skip-tiles",
-        action="store_true",
-        default=True,
-        help="タイル生成をスキップ (default: True, サーバー計算時)",
-    )
-    parser.add_argument(
-        "--reset",
-        action="store_true",
-        help="チェックポイントをリセットして最初から",
-    )
+    parser.add_argument("--prefecture", "-p", default=None,
+                        help="カンマ区切りで指定")
+    parser.add_argument("--resolution", "-r", type=int, default=5)
+    parser.add_argument("--workers", "-w", type=int, default=1)
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--start-from", default=None)
+    parser.add_argument("--skip-tiles", action="store_true", default=True)
+    parser.add_argument("--reset", action="store_true")
     args = parser.parse_args()
 
     workers = max(1, args.workers)
 
     log.info("=" * 60)
-    log.info("全国再エネポテンシャル バッチ計算")
-    log.info("  Resolution: %dm", args.resolution)
-    log.info("  Workers: %d", workers)
-    log.info("  Log file: %s", log_file)
-    log.info("  Progress file: %s", PROGRESS_FILE)
-    log.info("  Checkpoint: %s", CHECKPOINT_FILE)
+    log.info("全国再エネポテンシャル バッチ計算 (3-phase)")
+    log.info("  Resolution: %dm | Workers: %d", args.resolution, workers)
+    log.info("  Log: %s", log_file)
     log.info("=" * 60)
 
-    # チェックポイント読み込み
     if args.reset and CHECKPOINT_FILE.exists():
         CHECKPOINT_FILE.unlink()
         log.info("Checkpoint reset.")
 
-    checkpoint = load_checkpoint() if args.resume else {}
+    cp = load_checkpoint() if args.resume else {}
 
     # 対象県リスト
     if args.prefecture:
         pref_list = [p.strip() for p in args.prefecture.split(",")]
         for p in pref_list:
             if p not in PREFECTURES:
-                log.error("Unknown prefecture: %s", p)
+                log.error("Unknown: %s", p)
                 sys.exit(1)
     else:
         pref_list = list(PREFECTURES.keys())
 
-    # --start-from で開始位置を調整
     if args.start_from:
-        if args.start_from not in PREFECTURES:
-            log.error("Unknown prefecture for --start-from: %s", args.start_from)
-            sys.exit(1)
-        try:
-            idx = pref_list.index(args.start_from)
-            pref_list = pref_list[idx:]
-            log.info("Starting from: %s (%d prefectures remaining)",
-                     args.start_from, len(pref_list))
-        except ValueError:
-            log.error("%s not in target list", args.start_from)
-            sys.exit(1)
+        idx = pref_list.index(args.start_from)
+        pref_list = pref_list[idx:]
 
-    # 完了済みをフィルタ
+    # 完了済みを除外
     if args.resume:
-        remaining = [p for p in pref_list
-                     if checkpoint.get(p, {}).get("status") != "completed"]
-        skipped = len(pref_list) - len(remaining)
-        if skipped:
-            log.info("Skipping %d already-completed prefectures", skipped)
-        pref_list = remaining
+        already = [p for p in pref_list if cp.get(p, {}).get("status") == "completed"]
+        pref_list = [p for p in pref_list if p not in already]
+        if already:
+            log.info("Skipping %d completed prefectures", len(already))
 
-    # 進捗ヘッダー書き込み
+    total = len(pref_list)
     with open(PROGRESS_FILE, "a", encoding="utf-8") as f:
         f.write(f"\n{'='*80}\n")
         f.write(f"Batch started: {datetime.now().isoformat()}\n")
         f.write(f"Resolution: {args.resolution}m | Workers: {workers}"
-                f" | Prefectures: {len(pref_list)}\n")
+                f" | Prefectures: {total} (3-phase)\n")
         f.write(f"{'='*80}\n")
 
-    total = len(pref_list)
-    completed = 0
-    failed = []
     start_time = time.time()
 
-    if workers == 1:
-        # ── シングルワーカー (従来動作) ──────────────────────
-        for i, pref in enumerate(pref_list):
-            log.info("[%d/%d] Starting %s...", i + 1, total, pref)
-            ok = process_prefecture(pref, args.resolution, checkpoint,
-                                    args.skip_tiles)
-            if ok:
-                completed += 1
-            else:
-                failed.append(pref)
+    # ── Phase 1: download + extract_grid + slope (並列, API不要) ──
+    phase1_steps = ["download", "extract_grid", "slope"]
+    phase1_failed = run_phase_parallel(
+        "1-local", pref_list, phase1_steps, args.resolution, cp, workers
+    )
 
-            elapsed = time.time() - start_time
-            done_count = completed + len(failed)
-            rate = elapsed / done_count if done_count else 0
-            remaining_t = rate * (total - done_count)
-            log.info(
-                "Progress: %d/%d completed, %d failed | "
-                "Elapsed: %.0fmin | ETA: %.0fmin",
-                completed, total, len(failed),
-                elapsed / 60, remaining_t / 60,
-            )
-    else:
-        # ── マルチワーカー ───────────────────────────────────
-        log.info("Starting %d parallel workers", workers)
+    # Phase1 で失敗した県を除外して Phase2 に進む
+    phase2_list = [p for p in pref_list if p not in phase1_failed]
 
-        def _worker(pref):
-            return pref, process_prefecture(
-                pref, args.resolution, checkpoint, args.skip_tiles
-            )
+    # ── Phase 2: osm_land_use (順次, Overpass API) ──
+    phase2_failed = run_phase_overpass(phase2_list, args.resolution, cp)
 
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(_worker, p): p for p in pref_list}
-            for future in as_completed(futures):
-                pref = futures[future]
-                try:
-                    _, ok = future.result()
-                except Exception as e:
-                    log.exception("  [%s] Unhandled exception: %s", pref, e)
-                    ok = False
+    # Phase2 で失敗した県を除外して Phase3 に進む
+    # (osm_land_useがないとraster_scoreの土地利用がデフォルト値になるが実行は可能)
+    phase3_list = [p for p in phase2_list]  # osm失敗でもraster_scoreは実行
 
-                if ok:
-                    completed += 1
-                else:
-                    failed.append(pref)
+    # ── Phase 3: raster_score (並列) ──
+    phase3_failed = run_phase_parallel(
+        "3-raster", phase3_list, ["raster_score"], args.resolution, cp, workers
+    )
 
-                elapsed = time.time() - start_time
-                done_count = completed + len(failed)
-                rate = elapsed / done_count if done_count else 0
-                remaining_t = rate * (total - done_count)
-                log.info(
-                    "Progress: %d/%d completed, %d failed | "
-                    "Elapsed: %.0fmin | ETA: %.0fmin",
-                    completed, total, len(failed),
-                    elapsed / 60, remaining_t / 60,
-                )
+    # 全ステップ完了した県をマーク
+    all_steps = phase1_steps + ["osm_land_use", "raster_score"]
+    for pref in pref_list:
+        steps_done = cp.get(pref, {}).get("completed_steps", [])
+        if all(s in steps_done for s in all_steps):
+            mark_completed(cp, pref)
 
-    # 最終サマリー
-    elapsed_total = time.time() - start_time
+    # ── 最終サマリー ──
+    elapsed = time.time() - start_time
+    completed = sum(1 for p in pref_list
+                    if cp.get(p, {}).get("status") == "completed")
+    all_failed = set(phase1_failed) | set(phase2_failed) | set(phase3_failed)
+
     log.info("=" * 60)
     log.info("BATCH COMPLETE")
-    log.info("  Total: %d | Completed: %d | Failed: %d",
-             total, completed, len(failed))
-    log.info("  Elapsed: %.1f hours", elapsed_total / 3600)
-    if failed:
-        log.info("  Failed prefectures: %s", ", ".join(failed))
+    log.info("  Total: %d | Completed: %d | Partial/Failed: %d",
+             total, completed, len(all_failed))
+    log.info("  Phase 1 (local) failed: %s", phase1_failed or "none")
+    log.info("  Phase 2 (overpass) failed: %s", phase2_failed or "none")
+    log.info("  Phase 3 (raster) failed: %s", phase3_failed or "none")
+    log.info("  Elapsed: %.1f hours", elapsed / 3600)
     log.info("=" * 60)
 
-    # 進捗ファイルに最終サマリー
     with open(PROGRESS_FILE, "a", encoding="utf-8") as f:
         f.write(f"\n{'='*80}\n")
         f.write(f"BATCH COMPLETE: {datetime.now().isoformat()}\n")
-        f.write(f"Total: {total} | Completed: {completed} | Failed: {len(failed)}\n")
-        f.write(f"Elapsed: {elapsed_total/3600:.1f} hours\n")
-        if failed:
-            f.write(f"Failed: {', '.join(failed)}\n")
+        f.write(f"Total: {total} | Completed: {completed}"
+                f" | Failed: {len(all_failed)}\n")
+        f.write(f"Elapsed: {elapsed/3600:.1f} hours\n")
+        if all_failed:
+            f.write(f"Failed: {', '.join(sorted(all_failed))}\n")
         f.write(f"{'='*80}\n")
 
 
