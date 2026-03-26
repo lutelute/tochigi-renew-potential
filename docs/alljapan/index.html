@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>全国 再エネ適地スコアマップ (5m)</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+html,body{margin:0;padding:0;height:100%;font-family:-apple-system,'Hiragino Sans',sans-serif}
+#map{width:100%;height:100%}
+#controls{position:absolute;top:10px;left:60px;z-index:1000;background:white;
+  padding:10px 14px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.35);font-size:12px;
+  max-height:90vh;overflow-y:auto;width:240px}
+#controls h3{margin:8px 0 4px;font-size:13px;border-bottom:1px solid #ddd;padding-bottom:2px}
+#controls select{font-size:12px;padding:3px 6px;width:100%}
+.layer-group{max-height:200px;overflow-y:auto;border:1px solid #eee;padding:4px;margin:4px 0;border-radius:4px}
+#controls label{display:block;margin:2px 0;cursor:pointer;font-size:11px}
+#controls label input{margin-right:4px}
+#legend{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);z-index:1000;
+  background:rgba(255,255,255,0.93);padding:6px 16px;border-radius:8px;
+  box-shadow:0 2px 10px rgba(0,0,0,.35);font-size:11px;
+  display:flex;gap:18px;align-items:flex-start;white-space:nowrap}
+#legend .block{display:flex;flex-direction:column;gap:1px}
+#legend .block b{margin-bottom:2px;font-size:11px}
+#legend .item{display:flex;align-items:center;gap:4px;margin:1px 0}
+#legend .box{width:14px;height:14px;border-radius:2px;flex-shrink:0}
+#loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2000;
+  background:rgba(0,0,0,.75);color:white;padding:20px 40px;border-radius:10px;font-size:16px;display:none}
+.sub-label{font-size:10px;font-weight:bold;border:none;box-shadow:none;background:transparent;
+  text-shadow:1px 1px 1px white,-1px -1px 1px white,1px -1px 1px white,-1px 1px 1px white}
+#stats{position:absolute;top:10px;right:10px;z-index:1000;background:rgba(255,255,255,0.93);
+  padding:8px 12px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.35);font-size:11px;width:180px}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="controls">
+  <b style="font-size:14px">全国 RE適地スコア (5m)</b>
+
+  <h3>電力エリア</h3>
+  <select id="areaSelect" onchange="switchArea(this.value)">
+    <option value="all" selected>全国表示</option>
+    <option value="hokkaido">北海道</option>
+    <option value="tohoku">東北</option>
+    <option value="tokyo">東京</option>
+    <option value="chubu">中部</option>
+    <option value="hokuriku">北陸</option>
+    <option value="kansai">関西</option>
+    <option value="chugoku">中国</option>
+    <option value="shikoku">四国</option>
+    <option value="kyushu">九州</option>
+    <option value="okinawa">沖縄</option>
+  </select>
+
+  <h3>都道府県</h3>
+  <select id="prefSelect" onchange="switchPref(this.value)">
+    <option value="all">-- エリア内全表示 --</option>
+  </select>
+
+  <h3>スコアオーバーレイ</h3>
+  <label><input type="checkbox" id="chkScore" checked onchange="toggleScoreLayer()"> 適地スコア表示</label>
+  <div style="margin-left:18px">
+    <label><input type="range" id="opacitySlider" min="0" max="100" value="75" oninput="setOpacity(this.value)"> 透過度</label>
+  </div>
+
+  <h3>電力系統</h3>
+  <label><input type="checkbox" id="chkLines" checked onchange="toggleGrid('lines')"> 送電線</label>
+  <label><input type="checkbox" id="chkSubs" checked onchange="toggleGrid('subs')"> 変電所</label>
+
+  <h3>ハザードマップ</h3>
+  <small style="color:#888">国土交通省タイル重畳</small>
+  <label><input type="checkbox" id="chkFlood" onchange="toggleHazard('flood')"> 洪水浸水想定</label>
+  <label><input type="checkbox" id="chkSediment" onchange="toggleHazard('sediment')"> 土砂災害警戒</label>
+  <label><input type="checkbox" id="chkTsunami" onchange="toggleHazard('tsunami')"> 津波浸水想定</label>
+</div>
+
+<div id="legend">
+  <div class="block">
+    <b>適地スコア</b>
+    <div class="item"><div class="box" style="background:#006400"></div>80-100 最適</div>
+    <div class="item"><div class="box" style="background:#228B22"></div>60-79 良好</div>
+    <div class="item"><div class="box" style="background:#DAA520"></div>40-59 中程度</div>
+    <div class="item"><div class="box" style="background:#FF8C00"></div>20-39 低い</div>
+    <div class="item"><div class="box" style="background:#DC143C"></div>0-19 不適</div>
+  </div>
+  <div class="block">
+    <b>送電線</b>
+    <div class="item"><div style="width:20px;height:4px;background:#ff0000"></div>500kV</div>
+    <div class="item"><div style="width:20px;height:4px;background:#ff6600"></div>275kV</div>
+    <div class="item"><div style="width:20px;height:3px;background:#0066ff"></div>154kV</div>
+    <div class="item"><div style="width:20px;height:2px;background:#00aa44"></div>66kV</div>
+  </div>
+</div>
+
+<div id="loading">読み込み中...</div>
+
+<script>
+// ── 初期化 ────────────────────────────────────────
+const map = L.map('map').setView([36.5, 137.0], 6);
+
+map.createPane('score'); map.getPane('score').style.zIndex = 300; map.getPane('score').style.pointerEvents = 'none';
+map.createPane('hazard'); map.getPane('hazard').style.zIndex = 450; map.getPane('hazard').style.pointerEvents = 'none';
+map.createPane('substations'); map.getPane('substations').style.zIndex = 500;
+
+const bases = {
+  'CartoDB': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'CartoDB',maxZoom:19}),
+  'OSM': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'OSM',maxZoom:19}),
+  'Google 衛星': L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{attribution:'Google',maxZoom:20}),
+  '国土地理院': L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png',{attribution:'GSI',maxZoom:18}),
+  '航空写真': L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg',{attribution:'GSI',maxZoom:18}),
+};
+bases['CartoDB'].addTo(map);
+L.control.layers(bases,null,{position:'topright'}).addTo(map);
+
+const hazardLayers = {
+  flood: L.tileLayer('https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_data/{z}/{x}/{y}.png',
+    {attribution:'国土交通省',maxNativeZoom:17,maxZoom:20,opacity:0.6,pane:'hazard'}),
+  sediment: L.tileLayer('https://disaportaldata.gsi.go.jp/raster/05_dosekiryukeikaikuiki/{z}/{x}/{y}.png',
+    {attribution:'国土交通省',maxNativeZoom:17,maxZoom:20,opacity:0.6,pane:'hazard'}),
+  tsunami: L.tileLayer('https://disaportaldata.gsi.go.jp/raster/04_tsunami_newlegend_data/{z}/{x}/{y}.png',
+    {attribution:'国土交通省',maxNativeZoom:17,maxZoom:20,opacity:0.6,pane:'hazard'}),
+};
+
+// ── データ ─────────────────────────────────────────
+let prefData = {};
+let scoreLayers = [];
+let gridLayers = { lines: [], subs: [] };
+let currentArea = 'all';
+let scoreOpacity = 0.75;
+
+const areaCenters = {
+  all: [36.5, 137.0, 6],
+  hokkaido: [43.3, 142.5, 7],
+  tohoku: [39.5, 140.3, 7],
+  tokyo: [36.0, 139.8, 8],
+  chubu: [35.5, 137.5, 7],
+  hokuriku: [36.3, 136.8, 8],
+  kansai: [34.7, 135.5, 8],
+  chugoku: [34.6, 132.8, 8],
+  shikoku: [33.7, 133.5, 8],
+  kyushu: [32.5, 131.0, 7],
+  okinawa: [26.5, 127.8, 8],
+};
+
+const gridAreaFiles = [
+  'hokkaido','tohoku','tokyo','chubu','hokuriku','kansai','chugoku','shikoku','kyushu','okinawa'
+];
+
+function vColor(v){
+  if(v>=500)return'#ff0000';if(v>=275)return'#ff6600';if(v>=154)return'#0066ff';if(v>=66)return'#00aa44';return'#999999';
+}
+
+function showLoading(v){document.getElementById('loading').style.display=v?'block':'none';}
+
+// ── スコアレイヤー ──────────────────────────────────
+function clearScoreLayers(){
+  scoreLayers.forEach(l=>map.removeLayer(l));
+  scoreLayers=[];
+}
+
+function loadScoreForPref(key){
+  const d=prefData[key];
+  if(!d)return;
+  const ly=L.imageOverlay(key+'.png', d.bounds, {opacity:scoreOpacity, pane:'score'});
+  ly.addTo(map);
+  ly._prefKey=key;
+  scoreLayers.push(ly);
+}
+
+function loadScoreForArea(area){
+  clearScoreLayers();
+  for(const [key,d] of Object.entries(prefData)){
+    if(area==='all'||d.grid_area===area){
+      loadScoreForPref(key);
+    }
+  }
+}
+
+function toggleScoreLayer(){
+  const on=document.getElementById('chkScore').checked;
+  scoreLayers.forEach(l=>{if(on)l.addTo(map);else map.removeLayer(l);});
+}
+
+function setOpacity(val){
+  scoreOpacity=val/100;
+  scoreLayers.forEach(l=>l.setOpacity(scoreOpacity));
+}
+
+// ── 電力系統 ──────────────────────────────────────
+function clearGridLayers(){
+  gridLayers.lines.forEach(l=>map.removeLayer(l));
+  gridLayers.subs.forEach(l=>map.removeLayer(l));
+  gridLayers={lines:[],subs:[]};
+}
+
+async function loadGridForArea(area){
+  const areas = area==='all' ? gridAreaFiles : [area];
+  for(const a of areas){
+    // 送電線
+    try{
+      const r=await fetch(`grid/${a}_lines.geojson`);
+      const d=await r.json();
+      const ly=L.geoJSON(d,{
+        style:f=>{const v=f.properties.voltage_kv||0;
+          return{color:vColor(v),weight:v>=500?4:v>=275?3:v>=154?2.5:1.5,opacity:0.6};},
+        onEachFeature:(f,l)=>{
+          const n=f.properties.name||'';const v=f.properties.voltage_kv||0;
+          if(n)l.bindTooltip(`${n} (${v}kV)`,{sticky:true});
+        }
+      });
+      if(document.getElementById('chkLines').checked)ly.addTo(map);
+      ly._gridType='lines';
+      gridLayers.lines.push(ly);
+    }catch(e){}
+
+    // 変電所
+    try{
+      const r=await fetch(`grid/${a}_substations.geojson`);
+      const d=await r.json();
+      const ly=L.layerGroup();
+      d.features.forEach(f=>{
+        const v=f.properties.voltage_kv||0;
+        const n=f.properties.name||'';
+        let lat,lon;const g=f.geometry;
+        if(g.type==='Point'){lon=g.coordinates[0];lat=g.coordinates[1];}
+        else if(g.type==='Polygon'){const c=g.coordinates[0];lat=c.reduce((s,p)=>s+p[1],0)/c.length;lon=c.reduce((s,p)=>s+p[0],0)/c.length;}
+        else if(g.type==='MultiPolygon'){const c=g.coordinates[0][0];lat=c.reduce((s,p)=>s+p[1],0)/c.length;lon=c.reduce((s,p)=>s+p[0],0)/c.length;}
+        if(!lat||!lon)return;
+        const m=L.circleMarker([lat,lon],{radius:v>=275?8:v>=154?6:v>=66?4:3,
+          color:vColor(v),fillColor:vColor(v),fillOpacity:0.7,weight:1.5,pane:'substations'});
+        if(n&&v>=154)m.bindTooltip(n,{permanent:true,direction:'right',className:'sub-label'});
+        else if(n)m.bindTooltip(n,{sticky:true});
+        m.addTo(ly);
+      });
+      if(document.getElementById('chkSubs').checked)ly.addTo(map);
+      ly._gridType='subs';
+      gridLayers.subs.push(ly);
+    }catch(e){}
+  }
+}
+
+function toggleGrid(type){
+  const on=document.getElementById(type==='lines'?'chkLines':'chkSubs').checked;
+  gridLayers[type].forEach(l=>{if(on)l.addTo(map);else map.removeLayer(l);});
+}
+
+function toggleHazard(type){
+  const chk=document.getElementById('chk'+type.charAt(0).toUpperCase()+type.slice(1));
+  if(chk.checked)hazardLayers[type].addTo(map);else map.removeLayer(hazardLayers[type]);
+}
+
+// ── 都道府県セレクタ ────────────────────────────────
+function updatePrefSelect(area){
+  const sel=document.getElementById('prefSelect');
+  sel.innerHTML='<option value="all">-- エリア内全表示 --</option>';
+  for(const [key,d] of Object.entries(prefData)){
+    if(area==='all'||d.grid_area===area){
+      sel.innerHTML+=`<option value="${key}">${d.name_ja}</option>`;
+    }
+  }
+}
+
+function switchArea(area){
+  currentArea=area;
+  const [lat,lon,zoom]=areaCenters[area]||areaCenters.all;
+  map.setView([lat,lon],zoom);
+  updatePrefSelect(area);
+  clearGridLayers();
+  loadScoreForArea(area);
+  loadGridForArea(area);
+}
+
+function switchPref(key){
+  if(key==='all'){
+    switchArea(currentArea);
+    return;
+  }
+  const d=prefData[key];
+  if(!d)return;
+  map.fitBounds(d.bounds,{padding:[20,20]});
+  clearScoreLayers();
+  loadScoreForPref(key);
+}
+
+// ── 初期化 ─────────────────────────────────────────
+async function init(){
+  showLoading(true);
+  try{
+    const r=await fetch('prefectures.json');
+    prefData=await r.json();
+    updatePrefSelect('all');
+    loadScoreForArea('all');
+    await loadGridForArea('all');
+  }catch(e){
+    console.error('Init error:',e);
+  }
+  showLoading(false);
+}
+
+init();
+</script>
+</body>
+</html>

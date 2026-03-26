@@ -26,6 +26,11 @@ data/batch_progress.txt
 # ラスタースコア出力 (大容量)
 output/*/*.tif
 
+# 全国版Web用PNG (大容量、再生成可能)
+docs/alljapan/*.png
+docs/alljapan/grid/
+docs/alljapan/japan_total_score.png
+
 # Python
 __pycache__/
 *.pyc
